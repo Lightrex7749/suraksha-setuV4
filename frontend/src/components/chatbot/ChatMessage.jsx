@@ -18,24 +18,49 @@ const ChatMessage = ({ message }) => {
     if (!text) return null;
     
     // Convert markdown-style formatting to HTML
+    let inList = false;
+    let listHtml = '';
+    
     const formattedText = text
       .split('\n')
       .map((line, idx) => {
         // Bold text
-        line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        line = line.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>');
+        
+        // Italic text
+        line = line.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        
         // Bullet points
-        if (line.trim().startsWith('- ') || line.trim().startsWith('• ')) {
-          line = `<li class="ml-4">${line.trim().substring(2)}</li>`;
+        if (line.trim().startsWith('- ') || line.trim().startsWith('• ') || line.trim().startsWith('* ')) {
+          if (!inList) {
+            inList = true;
+            listHtml = '<ul class="list-disc ml-6 my-2 space-y-1">';
+          }
+          const content = line.trim().substring(2).replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>');
+          listHtml += `<li>${content}</li>`;
+          return null;
+        } else if (inList) {
+          inList = false;
+          const result = listHtml + '</ul>';
+          listHtml = '';
+          return result + (line.trim() ? `<br />${line}` : '');
         }
+        
         // Numbered lists
         if (/^\d+\.\s/.test(line.trim())) {
-          line = `<li class="ml-4">${line.trim().replace(/^\d+\.\s/, '')}</li>`;
+          const content = line.trim().replace(/^\d+\.\s/, '').replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>');
+          return `<li class="ml-6">${content}</li>`;
         }
+        
         return line;
       })
+      .filter(line => line !== null)
       .join('<br />');
 
-    return <div dangerouslySetInnerHTML={{ __html: formattedText }} />;
+    // Close any open list
+    const finalText = inList ? formattedText + listHtml + '</ul>' : formattedText;
+
+    return <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: finalText }} />;
   };
 
   return (

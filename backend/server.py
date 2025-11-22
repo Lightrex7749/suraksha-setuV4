@@ -75,6 +75,22 @@ class AIQueryRequest(BaseModel):
     query: str
     context: Optional[str] = None
 
+class ChatbotMessageRequest(BaseModel):
+    message: str
+    session_id: str
+    user_id: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+
+class ChatMessage(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str
+    user_id: Optional[str] = None
+    message: str
+    response: str
+    context: Optional[Dict[str, Any]] = None
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    isUser: bool = False
+
 class CommunityReportCreate(BaseModel):
     reporter_name: str
     location: str
@@ -582,6 +598,34 @@ async def get_evacuation_center_by_id(center_id: str):
 
 # ==================== AI ASSISTANT ENDPOINTS ====================
 
+async def get_disaster_context():
+    """Get current disaster context for AI responses"""
+    try:
+        weather = load_json_file('weather_data.json')
+        aqi = load_json_file('aqi_data.json')
+        alerts = load_json_file('alerts.json')
+        
+        # Get active high-priority alerts
+        active_alerts = [a for a in alerts if a.get('severity') in ['red', 'orange']][:3]
+        
+        context = {
+            "current_weather": {
+                "temperature": weather['current']['temperature'],
+                "condition": weather['current']['condition'],
+                "rain_probability": weather['current']['rain_probability']
+            },
+            "air_quality": {
+                "aqi": aqi['current']['aqi'],
+                "category": aqi['current']['category']
+            },
+            "active_alerts": active_alerts,
+            "alert_count": len(alerts)
+        }
+        return context
+    except Exception as e:
+        logging.error(f"Error getting disaster context: {str(e)}")
+        return {}
+
 @api_router.post("/ai-assistant")
 async def ai_assistant(request: AIQueryRequest):
     """AI-powered assistant using Gemini for disaster-related queries"""
@@ -589,21 +633,45 @@ async def ai_assistant(request: AIQueryRequest):
         raise HTTPException(status_code=503, detail="AI service is not available")
     
     try:
-        # Build context-aware prompt
-        context = request.context or "disaster management and safety"
+        # Get real-time disaster context
+        disaster_context = await get_disaster_context()
+        
+        # Build enhanced context-aware prompt
+        context_info = f"""
+Current Situation in India:
+- Weather: {disaster_context.get('current_weather', {}).get('temperature', 'N/A')}°C, {disaster_context.get('current_weather', {}).get('condition', 'N/A')}
+- Air Quality Index: {disaster_context.get('air_quality', {}).get('aqi', 'N/A')} ({disaster_context.get('air_quality', {}).get('category', 'N/A')})
+- Active Alerts: {disaster_context.get('alert_count', 0)} alerts
+"""
+        
+        if disaster_context.get('active_alerts'):
+            context_info += "\nHigh Priority Alerts:\n"
+            for alert in disaster_context['active_alerts']:
+                context_info += f"- {alert.get('type', 'Alert')}: {alert.get('title', 'Unknown')} ({alert.get('severity', 'unknown')} level)\n"
+        
         prompt = f"""You are Suraksha Setu AI Assistant, an expert in disaster management, environmental safety, and emergency response in India.
 
-Context: {context}
+{context_info}
 
 User Query: {request.query}
 
-Provide a helpful, accurate, and actionable response. Keep it concise but informative. If it's about an emergency, prioritize safety instructions."""
+Instructions:
+- Provide helpful, accurate, and actionable responses
+- Use bullet points (- ) for lists to improve readability
+- Use **bold** for important warnings or key points
+- If it's an emergency query, prioritize immediate safety instructions
+- Reference current conditions when relevant
+- Keep responses concise but informative (2-4 paragraphs max)
+- Be empathetic and supportive in tone
+
+Response:"""
 
         response = gemini_model.generate_content(prompt)
         
         return {
             "query": request.query,
             "response": response.text,
+            "context": disaster_context,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
@@ -661,6 +729,164 @@ Provide recommendations as a JSON array with format: {{"type": "category", "mess
                 {"type": "safety", "message": "Keep emergency contacts handy.", "priority": "high"}
             ]
         }
+
+# ==================== ADVANCED CHATBOT ENDPOINTS ====================
+
+@api_router.post("/chatbot/message", response_model=ChatMessage)
+async def chatbot_message(request: ChatbotMessageRequest):
+    """Send message to chatbot with conversation history and context"""
+    if not gemini_model:
+        raise HTTPException(status_code=503, detail="AI service is not available")
+    
+    try:
+        # Get conversation history for context
+        history = await db.chat_messages.find(
+            {"session_id": request.session_id},
+            {"_id": 0}
+        ).sort("timestamp", 1).limit(10).to_list(10)
+        
+        # Get real-time disaster context
+        disaster_context = await get_disaster_context()
+        
+        # Build conversation history for context
+        conversation_history = ""
+        if history:
+            conversation_history = "\n\nRecent Conversation:\n"
+            for msg in history[-5:]:  # Last 5 messages
+                conversation_history += f"User: {msg.get('message', '')}\n"
+                conversation_history += f"Assistant: {msg.get('response', '')}\n"
+        
+        # Build context info
+        context_info = f"""
+Current Situation in India:
+- Weather: {disaster_context.get('current_weather', {}).get('temperature', 'N/A')}°C, {disaster_context.get('current_weather', {}).get('condition', 'N/A')}
+- Air Quality Index: {disaster_context.get('air_quality', {}).get('aqi', 'N/A')} ({disaster_context.get('air_quality', {}).get('category', 'N/A')})
+- Active Alerts: {disaster_context.get('alert_count', 0)} alerts
+"""
+        
+        if disaster_context.get('active_alerts'):
+            context_info += "\nHigh Priority Alerts:\n"
+            for alert in disaster_context['active_alerts']:
+                context_info += f"- {alert.get('type', 'Alert')}: {alert.get('title', 'Unknown')} ({alert.get('severity', 'unknown')} level)\n"
+        
+        # Enhanced prompt with conversation history
+        prompt = f"""You are Suraksha Setu AI Assistant, an expert in disaster management, environmental safety, and emergency response in India.
+
+{context_info}
+{conversation_history}
+
+Current User Query: {request.message}
+
+Instructions:
+- Provide helpful, accurate, and actionable responses
+- Use bullet points (- ) for lists to improve readability
+- Use **bold** for important warnings or key points
+- If it's an emergency query, prioritize immediate safety instructions
+- Reference conversation history when relevant
+- Reference current conditions when relevant
+- Keep responses concise but informative (2-4 paragraphs max)
+- Be empathetic and supportive in tone
+- If asked about previous topics, use the conversation history
+
+Response:"""
+
+        response = gemini_model.generate_content(prompt)
+        
+        # Create chat message
+        chat_message = ChatMessage(
+            session_id=request.session_id,
+            user_id=request.user_id,
+            message=request.message,
+            response=response.text,
+            context=disaster_context
+        )
+        
+        # Save to database
+        message_doc = chat_message.model_dump()
+        message_doc['timestamp'] = message_doc['timestamp'].isoformat()
+        await db.chat_messages.insert_one(message_doc)
+        
+        return chat_message
+        
+    except Exception as e:
+        logging.error(f"Chatbot message error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error processing chatbot message")
+
+@api_router.get("/chatbot/history")
+async def get_chat_history(session_id: str, limit: int = Query(default=50, le=100)):
+    """Get chat history for a session"""
+    try:
+        messages = await db.chat_messages.find(
+            {"session_id": session_id},
+            {"_id": 0}
+        ).sort("timestamp", 1).limit(limit).to_list(limit)
+        
+        # Convert timestamp strings back to datetime for response
+        for msg in messages:
+            if isinstance(msg.get('timestamp'), str):
+                msg['timestamp'] = datetime.fromisoformat(msg['timestamp'])
+        
+        return {"session_id": session_id, "messages": messages}
+        
+    except Exception as e:
+        logging.error(f"Error fetching chat history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching chat history")
+
+@api_router.get("/chatbot/suggestions")
+async def get_chatbot_suggestions():
+    """Get suggested questions based on current situation"""
+    try:
+        disaster_context = await get_disaster_context()
+        
+        # Base suggestions
+        suggestions = [
+            "What should I do during an earthquake?",
+            "How to prepare for a cyclone?",
+            "Tell me about air quality safety tips",
+            "What's in an emergency kit checklist?",
+            "How to stay safe during floods?",
+        ]
+        
+        # Add context-aware suggestions
+        if disaster_context.get('air_quality', {}).get('aqi', 0) > 150:
+            suggestions.insert(0, "What precautions should I take for poor air quality?")
+        
+        if disaster_context.get('active_alerts'):
+            alert = disaster_context['active_alerts'][0]
+            suggestions.insert(0, f"Tell me about the current {alert.get('type', 'alert')}")
+        
+        if disaster_context.get('current_weather', {}).get('rain_probability', 0) > 70:
+            suggestions.insert(0, "What should I do if heavy rain is expected?")
+        
+        return {"suggestions": suggestions[:6]}  # Return top 6
+        
+    except Exception as e:
+        logging.error(f"Error getting suggestions: {str(e)}")
+        # Return default suggestions on error
+        return {
+            "suggestions": [
+                "What should I do during an earthquake?",
+                "How to prepare for a cyclone?",
+                "Tell me about air quality safety tips",
+                "What's in an emergency kit checklist?",
+            ]
+        }
+
+@api_router.delete("/chatbot/clear")
+async def clear_chat_history(session_id: str):
+    """Clear chat history for a session"""
+    try:
+        result = await db.chat_messages.delete_many({"session_id": session_id})
+        
+        return {
+            "success": True,
+            "deleted_count": result.deleted_count,
+            "message": "Chat history cleared successfully"
+        }
+        
+    except Exception as e:
+        logging.error(f"Error clearing chat history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error clearing chat history")
 
 # ==================== COMMUNITY REPORTS ENDPOINTS ====================
 

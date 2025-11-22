@@ -78,6 +78,7 @@ const Chatbot = () => {
         type: 'bot',
         text: data.response,
         timestamp: new Date(),
+        context: data.context,
       };
 
       setMessages((prev) => [...prev, botMessage]);
@@ -218,9 +219,29 @@ const Chatbot = () => {
                               : 'bg-muted text-foreground rounded-tl-none'
                           }`}
                         >
-                          <p className="text-sm whitespace-pre-wrap break-words">
-                            {message.text}
-                          </p>
+                          {message.type === 'user' ? (
+                            <p className="text-sm whitespace-pre-wrap break-words">
+                              {message.text}
+                            </p>
+                          ) : (
+                            <div className="text-sm whitespace-pre-wrap break-words prose prose-sm max-w-none">
+                              {message.text.split('\n').map((line, idx) => {
+                                // Format bold text
+                                const parts = line.split(/(\*\*.*?\*\*)/g);
+                                return (
+                                  <span key={idx}>
+                                    {parts.map((part, i) => {
+                                      if (part.startsWith('**') && part.endsWith('**')) {
+                                        return <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>;
+                                      }
+                                      return part;
+                                    })}
+                                    {idx < message.text.split('\n').length - 1 && <br />}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                         <span className="text-xs text-muted-foreground px-2">
                           {formatTime(message.timestamp)}

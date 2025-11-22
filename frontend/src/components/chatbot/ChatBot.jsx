@@ -32,6 +32,15 @@ const ChatBot = () => {
       const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       setSessionId(newSessionId);
       localStorage.setItem('chatbot_session_id', newSessionId);
+      
+      // Add welcome message for new sessions
+      setMessages([{
+        id: 'welcome',
+        message: '',
+        response: '👋 Hello! I\'m Suraksha AI, your disaster management assistant. I can help you with:\n\n- **Real-time disaster alerts** and weather updates\n- **Emergency preparedness** tips and checklists\n- **Safety guidelines** for earthquakes, cyclones, floods, and more\n- **Air quality** information and health recommendations\n- **Evacuation** routes and shelter locations\n\nFeel free to ask me anything about staying safe during emergencies!',
+        timestamp: new Date().toISOString(),
+        isUser: false
+      }]);
     }
   }, []);
 
@@ -100,11 +109,17 @@ const ChatBot = () => {
       setMessages(prev => [...prev.slice(0, -1), response.data]);
     } catch (error) {
       console.error('Error sending message:', error);
+      const errorMsg = error.response?.status === 503 
+        ? 'AI service is temporarily unavailable. Please try again in a moment.'
+        : error.response?.data?.detail 
+        ? error.response.data.detail
+        : 'Sorry, I encountered an error. Please check your connection and try again.';
+      
       setMessages(prev => [
         ...prev.slice(0, -1),
         {
           ...userMessage,
-          response: 'Sorry, I encountered an error. Please try again.',
+          response: errorMsg,
           error: true
         }
       ]);
@@ -217,9 +232,9 @@ const ChatBot = () => {
                       <MessageCircle className="h-8 w-8 text-primary" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-lg mb-2">Welcome to Suraksha AI!</h4>
+                      <h4 className="font-semibold text-lg mb-2">Welcome to Suraksha AI! 🛡️</h4>
                       <p className="text-sm text-muted-foreground mb-4">
-                        I'm here to help you with disaster information, safety tips, and real-time alerts.
+                        I'm your AI disaster management assistant. I can help you with real-time alerts, safety tips, emergency preparedness, and answer any questions about disasters and weather conditions in India.
                       </p>
                     </div>
                     {suggestions.length > 0 && (
