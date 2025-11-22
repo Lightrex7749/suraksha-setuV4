@@ -1,0 +1,169 @@
+[
+  {
+    "id": "know-001",
+    "category": "Cyclone",
+    "title": "Cyclone Safety Guide",
+    "icon": "wind",
+    "content": {
+      "description": "A cyclone is a large-scale air mass that rotates around a strong center of low atmospheric pressure. In India, cyclones primarily affect coastal regions.",
+      "before": [
+        "Keep emergency kit ready (water, food, medicines, torch, radio)",
+        "Charge all electronic devices and power banks",
+        "Secure loose objects outside your home",
+        "Know the location of nearest cyclone shelter",
+        "Keep important documents in waterproof container",
+        "Store 3 days worth of drinking water and non-perishable food"
+      ],
+      "during": [
+        "Stay indoors, away from windows",
+        "Listen to radio/TV for updates",
+        "Do not venture outside even if weather seems calm (eye of storm)",
+        "If in a building, move to higher floors if flooding starts",
+        "Do not touch wet electrical equipment",
+        "Stay away from coastal areas and riverbanks"
+      ],
+      "after": [
+        "Wait for official 'all clear' before going outside",
+        "Avoid damaged areas and power lines",
+        "Boil water before drinking",
+        "Check for injuries, provide first aid",
+        "Report hazards to authorities",
+        "Document damage for insurance claims"
+      ],
+      "emergency_numbers": ["1070 (State Control Room)", "108 (Ambulance)", "1077 (Fire)", "100 (Police)"]
+    }
+  },
+  {
+    "id": "know-002",
+    "category": "Flood",
+    "title": "Flood Preparedness",
+    "icon": "droplets",
+    "content": {
+      "description": "Floods are the most common natural disaster in India, affecting millions annually. Proper preparation can save lives.",
+      "before": [
+        "Identify evacuation routes and practice them",
+        "Move valuables to upper floors",
+        "Keep vehicles fueled and ready",
+        "Learn how to turn off gas, electricity, and water",
+        "Store important documents in waterproof bags",
+        "Prepare emergency kit with essentials"
+      ],
+      "during": [
+        "Move to higher ground immediately",
+        "Never walk or drive through flowing water (6 inches can knock you down)",
+        "If trapped, move to highest level and call for help",
+        "Stay away from electrical equipment if wet",
+        "Listen to emergency broadcasts",
+        "Do not return home until authorities say it's safe"
+      ],
+      "after": [
+        "Avoid floodwater - it may be contaminated",
+        "Check for structural damage before entering buildings",
+        "Clean and disinfect everything that got wet",
+        "Throw away food that came in contact with floodwater",
+        "Watch for animals, especially snakes",
+        "Use flashlights, not candles, for lighting"
+      ],
+      "emergency_numbers": ["1070 (State Control Room)", "108 (Ambulance)", "1077 (Fire)", "1916 (Water Resources)"]
+    }
+  },
+  {
+    "id": "know-003",
+    "category": "Air Quality",
+    "title": "Understanding Air Quality Index (AQI)",
+    "icon": "activity",
+    "content": {
+      "description": "AQI is a measure of air quality that indicates how polluted the air is and what health effects might be a concern.",
+      "aqi_levels": [
+        {"range": "0-50", "category": "Good", "color": "Green", "health_impact": "Air quality is satisfactory"},
+        {"range": "51-100", "category": "Satisfactory", "color": "Light Green", "health_impact": "Minor breathing discomfort to sensitive people"},
+        {"range": "101-200", "category": "Moderate", "color": "Yellow", "health_impact": "Breathing discomfort to people with respiratory diseases"},
+        {"range": "201-300", "category": "Poor", "color": "Orange", "health_impact": "Breathing discomfort to most people on prolonged exposure"},
+        {"range": "301-400", "category": "Very Poor", "color": "Red", "health_impact": "Respiratory illness on prolonged exposure"},
+        {"range": "401-500", "category": "Severe", "color": "Maroon", "health_impact": "Affects healthy people and seriously impacts those with existing diseases"}
+      ],
+      "precautions": [
+        "Check AQI daily before outdoor activities",
+        "Use N95 or N99 masks when AQI > 200",
+        "Keep windows closed when AQI is poor",
+        "Use air purifiers indoors",
+        "Avoid outdoor exercise when AQI > 150",
+        "Stay hydrated and eat antioxidant-rich foods"
+      ],
+      "vulnerable_groups": ["Children", "Elderly", "Pregnant women", "People with respiratory/heart conditions"],
+      "emergency_numbers": ["104 (Health Helpline)", "1800-11-5581 (Pollution Control Board)"]
+    }
+  },
+  {
+    "id": "know-004",
+    "category": "Heatwave",
+    "title": "Heatwave Safety Measures",
+    "icon": "thermometer",
+    "content": {
+      "description": "A heatwave is a period of abnormally high temperatures. It can lead to heat exhaustion, heat stroke, and even death if proper precautions are not taken.",
+      "warning_signs": [
+        "Heat Cramps: Muscle pains/spasms in abdomen, arms or legs",
+        "Heat Exhaustion: Heavy sweating, weakness, nausea, headache",
+        "Heat Stroke: High body temperature (>40°C), confusion, loss of consciousness"
+      ],
+      "prevention": [
+        "Stay indoors during peak heat hours (11 AM - 3 PM)",
+        "Drink plenty of water (even if not thirsty)",
+        "Wear light, loose-fitting, cotton clothes",
+        "Use umbrella, hat, or damp cloth on head when outside",
+        "Avoid tea, coffee, and carbonated drinks",
+        "Take cool showers multiple times a day"
+      ],
+      "first_aid": [
+        "Move person to cool place immediately",
+        "Remove excess clothing",
+        "Apply cool water/ice to body",
+        "Give water/ORS if person is conscious",
+        "Call ambulance (108) if heat stroke suspected",
+        "DO NOT give aspirin or paracetamol"
+      ],
+      "high_risk_groups": ["Outdoor workers", "Elderly", "Children", "Homeless people", "People with chronic illness"],
+      "emergency_numbers": ["108 (Ambulance)", "104 (Health Helpline)"]
+    }
+  },
+  {
+    "id": "know-005",
+    "category": "Earthquake",
+    "title": "Earthquake Safety Protocol",
+    "icon": "zap",
+    "content": {
+      "description": "Earthquakes strike suddenly without warning. Knowing what to do can help protect you and your family.",
+      "before": [
+        "Identify safe spots in each room (under sturdy table/desk)",
+        "Secure heavy furniture and appliances to walls",
+        "Keep emergency kit in accessible location",
+        "Plan and practice 'Drop, Cover, Hold' drill",
+        "Keep shoes and torch near bed",
+        "Know how to turn off gas, water, electricity"
+      ],
+      "during": [
+        "DROP to hands and knees",
+        "COVER head and neck under sturdy furniture",
+        "HOLD ON until shaking stops",
+        "If indoors, stay indoors (don't run outside)",
+        "If outdoors, move away from buildings, trees, power lines",
+        "If in vehicle, stop safely and stay inside"
+      ],
+      "after": [
+        "Check for injuries, provide first aid",
+        "Expect aftershocks",
+        "Inspect home for damage",
+        "Listen to radio for updates",
+        "Use phone only for emergencies",
+        "Stay away from damaged buildings"
+      ],
+      "what_not_to_do": [
+        "Don't use elevators",
+        "Don't light matches or candles (gas leak risk)",
+        "Don't stand in doorways (not safer than other locations)",
+        "Don't rush outside"
+      ],
+      "emergency_numbers": ["108 (Ambulance)", "100 (Police)", "1077 (Fire)", "1070 (Disaster Control)"]
+    }
+  }
+]

@@ -1,0 +1,46 @@
+{
+  "current": {
+    "location": "Bhubaneswar",
+    "aqi": 142,
+    "category": "Moderate",
+    "primary_pollutant": "PM2.5",
+    "health_impact": "Acceptable for most; sensitive groups may experience minor issues",
+    "color": "#f59e0b",
+    "last_updated": "2024-08-15T14:00:00Z",
+    "pollutants": {
+      "pm25": 54,
+      "pm10": 89,
+      "no2": 32,
+      "so2": 12,
+      "co": 0.8,
+      "o3": 45
+    }
+  },
+  "stations": [
+    {"name": "Bhubaneswar - OSPCB", "aqi": 142, "category": "Moderate", "lat": 20.2961, "lon": 85.8245},
+    {"name": "Cuttack - City Center", "aqi": 156, "category": "Moderate", "lat": 20.5124, "lon": 85.8828},
+    {"name": "Puri - Beach Road", "aqi": 98, "category": "Satisfactory", "lat": 19.8135, "lon": 85.8312},
+    {"name": "Rourkela - Steel Plant", "aqi": 218, "category": "Poor", "lat": 22.2604, "lon": 84.8536},
+    {"name": "Talcher - Thermal Zone", "aqi": 245, "category": "Poor", "lat": 20.9517, "lon": 85.2258},
+    {"name": "Angul - Industrial Area", "aqi": 234, "category": "Poor", "lat": 20.8400, "lon": 85.1014},
+    {"name": "Jharsuguda - Airport", "aqi": 189, "category": "Moderate", "lat": 21.9138, "lon": 84.0501},
+    {"name": "Berhampur - University", "aqi": 112, "category": "Moderate", "lat": 19.3150, "lon": 84.7941}
+  ],
+  "historical": [
+    {"date": "Aug 08", "aqi": 135},
+    {"date": "Aug 09", "aqi": 148},
+    {"date": "Aug 10", "aqi": 162},
+    {"date": "Aug 11", "aqi": 156},
+    {"date": "Aug 12", "aqi": 143},
+    {"date": "Aug 13", "aqi": 138},
+    {"date": "Aug 14", "aqi": 145},
+    {"date": "Aug 15", "aqi": 142}
+  ],
+  "forecast": [
+    {"date": "Aug 16", "aqi": 128, "category": "Moderate"},
+    {"date": "Aug 17", "aqi": 115, "category": "Moderate"},
+    {"date": "Aug 18", "aqi": 102, "category": "Satisfactory"},
+    {"date": "Aug 19", "aqi": 95, "category": "Satisfactory"},
+    {"date": "Aug 20", "aqi": 108, "category": "Moderate"}
+  ]
+}

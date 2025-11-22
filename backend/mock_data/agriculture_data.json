@@ -1,0 +1,70 @@
+{
+  "current_season": "Kharif",
+  "crop_advisory": [
+    {
+      "crop": "Rice (Paddy)",
+      "stage": "Tillering",
+      "condition": "Good",
+      "rainfall_impact": "Favorable",
+      "pest_risk": "Moderate - Brown Plant Hopper detected",
+      "advisory": "Monitor water levels, apply recommended pesticides if infestation > 5%. Drain excess water if heavy rains continue.",
+      "area_coverage": "3.2 million hectares",
+      "expected_yield": "Above average"
+    },
+    {
+      "crop": "Maize",
+      "stage": "Vegetative",
+      "condition": "Fair",
+      "rainfall_impact": "Excess rainfall causing waterlogging",
+      "pest_risk": "High - Fall Army Worm alert",
+      "advisory": "Ensure proper drainage. Apply Chlorantraniliprole for fall army worm control. Monitor closely.",
+      "area_coverage": "0.4 million hectares",
+      "expected_yield": "Below average"
+    },
+    {
+      "crop": "Pulses (Arhar)",
+      "stage": "Early Growth",
+      "condition": "Good",
+      "rainfall_impact": "Favorable",
+      "pest_risk": "Low",
+      "advisory": "Continue regular monitoring. Apply biofertilizers for better nodulation.",
+      "area_coverage": "0.5 million hectares",
+      "expected_yield": "Average"
+    },
+    {
+      "crop": "Vegetables",
+      "stage": "Various",
+      "condition": "Fair",
+      "rainfall_impact": "Mixed - some waterlogging issues",
+      "pest_risk": "Moderate - Fruit borer activity",
+      "advisory": "Harvest mature crops before cyclone. Store in safe locations. Apply mulching to prevent soil erosion.",
+      "area_coverage": "0.3 million hectares",
+      "expected_yield": "Below average"
+    }
+  ],
+  "soil_moisture": {
+    "coastal": "Saturated",
+    "central": "Adequate",
+    "western": "Moderate",
+    "northern": "Adequate"
+  },
+  "irrigation_advisory": "Suspend irrigation in coastal and central districts due to excess rainfall. Western districts can continue as per crop requirement.",
+  "cyclone_impact": {
+    "high_risk_crops": ["Banana", "Papaya", "Vegetables", "Coconut"],
+    "precautions": [
+      "Harvest all matured crops immediately",
+      "Secure staked crops with additional support",
+      "Drain excess water from fields",
+      "Store harvested produce in safe locations",
+      "Keep farm equipment secured"
+    ],
+    "expected_crop_loss": "15-25% in coastal districts",
+    "government_support": "Input subsidy and crop insurance claims processing initiated"
+  },
+  "market_prices": [
+    {"commodity": "Rice (Paddy)", "price": 2100, "unit": "per quintal", "trend": "stable"},
+    {"commodity": "Maize", "price": 1850, "unit": "per quintal", "trend": "increasing"},
+    {"commodity": "Arhar (Pigeon Pea)", "price": 7500, "unit": "per quintal", "trend": "stable"},
+    {"commodity": "Vegetables (avg)", "price": 2500, "unit": "per quintal", "trend": "increasing"}
+  ]
+}

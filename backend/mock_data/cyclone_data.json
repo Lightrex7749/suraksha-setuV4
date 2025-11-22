@@ -1,0 +1,57 @@
+{
+  "active_cyclone": {
+    "name": "Mocha",
+    "category": "Severe Cyclonic Storm",
+    "current_position": {
+      "lat": 18.5,
+      "lon": 87.2,
+      "location_description": "Bay of Bengal, 420 km southeast of Paradip"
+    },
+    "intensity": {
+      "wind_speed": 110,
+      "gusts": 125,
+      "pressure": 978
+    },
+    "movement": {
+      "direction": "North-Northwest",
+      "speed": 15
+    },
+    "forecast_track": [
+      {"time": "Aug 15, 6 PM", "lat": 18.8, "lon": 87.0, "wind": 115, "category": "Severe"},
+      {"time": "Aug 16, 6 AM", "lat": 19.2, "lon": 86.7, "wind": 120, "category": "Very Severe"},
+      {"time": "Aug 16, 6 PM", "lat": 19.6, "lon": 86.3, "wind": 125, "category": "Very Severe"},
+      {"time": "Aug 17, 6 AM", "lat": 20.0, "lon": 85.9, "wind": 120, "category": "Very Severe"},
+      {"time": "Aug 17, 12 PM", "lat": 20.2, "lon": 85.7, "wind": 110, "category": "Severe"},
+      {"time": "Aug 17, 6 PM", "lat": 20.5, "lon": 85.5, "wind": 95, "category": "Cyclonic Storm"},
+      {"time": "Aug 18, 6 AM", "lat": 21.0, "lon": 85.2, "wind": 75, "category": "Deep Depression"}
+    ],
+    "landfall_estimate": {
+      "location": "Near Paradip-Chandbali coast",
+      "time": "Aug 17, 2024 between 10 AM - 2 PM",
+      "wind_speed_at_landfall": "110-120 km/h"
+    },
+    "impact_areas": [
+      {"district": "Jagatsinghpur", "risk": "Very High"},
+      {"district": "Kendrapara", "risk": "Very High"},
+      {"district": "Bhadrak", "risk": "High"},
+      {"district": "Balasore", "risk": "High"},
+      {"district": "Puri", "risk": "High"},
+      {"district": "Khordha", "risk": "Moderate"},
+      {"district": "Cuttack", "risk": "Moderate"}
+    ],
+    "warnings": [
+      "Storm surge of 1.5-2 meters likely to inundate coastal areas",
+      "Heavy to very heavy rainfall (20-30 cm) in coastal districts",
+      "Sea condition very rough to high, fishermen advised not to venture",
+      "Damage to thatched huts, power lines, communication towers expected",
+      "Evacuation of coastal villages recommended"
+    ]
+  },
+  "historical_cyclones": [
+    {"name": "Fani", "year": 2019, "max_wind": 215, "category": "Extremely Severe"},
+    {"name": "Titli", "year": 2018, "max_wind": 150, "category": "Very Severe"},
+    {"name": "Hudhud", "year": 2014, "max_wind": 185, "category": "Very Severe"},
+    {"name": "Phailin", "year": 2013, "max_wind": 215, "category": "Very Severe"},
+    {"name": "Thane", "year": 2011, "max_wind": 140, "category": "Very Severe"}
+  ]
+}

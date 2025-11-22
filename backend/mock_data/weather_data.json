@@ -1,0 +1,45 @@
+{
+  "current": {
+    "location": "Bhubaneswar, Odisha",
+    "pincode": "751001",
+    "coordinates": {
+      "lat": 20.2961,
+      "lon": 85.8245
+    },
+    "temperature": 32,
+    "feels_like": 36,
+    "condition": "Partly Cloudy",
+    "humidity": 68,
+    "wind_speed": 12,
+    "wind_direction": "SE",
+    "wind_degree": 135,
+    "pressure": 1008,
+    "visibility": 8,
+    "uv_index": 7,
+    "rain_probability": 45,
+    "cloud_cover": 40,
+    "dewpoint": 24,
+    "sunrise": "05:48 AM",
+    "sunset": "05:32 PM",
+    "last_updated": "2024-08-15T14:30:00Z"
+  },
+  "hourly": [
+    {"time": "03:00 PM", "temp": 32, "condition": "Partly Cloudy", "rain": 10, "icon": "partly-cloudy"},
+    {"time": "04:00 PM", "temp": 31, "condition": "Cloudy", "rain": 45, "icon": "cloudy"},
+    {"time": "05:00 PM", "temp": 30, "condition": "Light Rain", "rain": 70, "icon": "rain"},
+    {"time": "06:00 PM", "temp": 28, "condition": "Rain", "rain": 85, "icon": "rain"},
+    {"time": "07:00 PM", "temp": 27, "condition": "Light Rain", "rain": 60, "icon": "rain"},
+    {"time": "08:00 PM", "temp": 26, "condition": "Cloudy", "rain": 30, "icon": "cloudy"},
+    {"time": "09:00 PM", "temp": 25, "condition": "Partly Cloudy", "rain": 15, "icon": "partly-cloudy"},
+    {"time": "10:00 PM", "temp": 25, "condition": "Clear", "rain": 5, "icon": "clear-night"}
+  ],
+  "daily": [
+    {"day": "Today", "date": "Aug 15", "high": 33, "low": 24, "condition": "Partly Cloudy", "rain": 45, "icon": "partly-cloudy"},
+    {"day": "Tomorrow", "date": "Aug 16", "high": 32, "low": 23, "condition": "Rainy", "rain": 80, "icon": "rain"},
+    {"day": "Saturday", "date": "Aug 17", "high": 30, "low": 22, "condition": "Thunderstorm", "rain": 90, "icon": "thunderstorm"},
+    {"day": "Sunday", "date": "Aug 18", "high": 29, "low": 22, "condition": "Heavy Rain", "rain": 95, "icon": "heavy-rain"},
+    {"day": "Monday", "date": "Aug 19", "high": 28, "low": 21, "condition": "Rainy", "rain": 85, "icon": "rain"},
+    {"day": "Tuesday", "date": "Aug 20", "high": 30, "low": 23, "condition": "Cloudy", "rain": 60, "icon": "cloudy"},
+    {"day": "Wednesday", "date": "Aug 21", "high": 31, "low": 24, "condition": "Partly Cloudy", "rain": 40, "icon": "partly-cloudy"}
+  ]
+}

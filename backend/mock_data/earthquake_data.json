@@ -1,0 +1,68 @@
+[
+  {
+    "id": "eq-001",
+    "magnitude": 3.2,
+    "depth": 10,
+    "location": "Angul District",
+    "coordinates": {"lat": 20.8400, "lon": 85.1014},
+    "time": "2024-08-10T04:35:22Z",
+    "intensity": "Light",
+    "felt_reports": 234,
+    "damage": "None reported"
+  },
+  {
+    "id": "eq-002",
+    "magnitude": 4.1,
+    "depth": 15,
+    "location": "Talcher Region",
+    "coordinates": {"lat": 20.9517, "lon": 85.2258},
+    "time": "2024-07-28T11:22:15Z",
+    "intensity": "Moderate",
+    "felt_reports": 1245,
+    "damage": "Minor cracks in buildings"
+  },
+  {
+    "id": "eq-003",
+    "magnitude": 2.8,
+    "depth": 8,
+    "location": "Sambalpur",
+    "coordinates": {"lat": 21.4669, "lon": 83.9812},
+    "time": "2024-07-15T19:45:33Z",
+    "intensity": "Light",
+    "felt_reports": 89,
+    "damage": "None reported"
+  },
+  {
+    "id": "eq-004",
+    "magnitude": 3.8,
+    "depth": 12,
+    "location": "Dhenkanal",
+    "coordinates": {"lat": 20.6625, "lon": 85.5988},
+    "time": "2024-06-22T08:12:40Z",
+    "intensity": "Light",
+    "felt_reports": 567,
+    "damage": "None reported"
+  },
+  {
+    "id": "eq-005",
+    "magnitude": 5.2,
+    "depth": 20,
+    "location": "Bay of Bengal (offshore)",
+    "coordinates": {"lat": 19.2500, "lon": 86.5000},
+    "time": "2024-05-18T02:30:18Z",
+    "intensity": "Strong",
+    "felt_reports": 8934,
+    "damage": "Minor structural damage in coastal areas"
+  },
+  {
+    "id": "eq-006",
+    "magnitude": 3.5,
+    "depth": 11,
+    "location": "Mayurbhanj",
+    "coordinates": {"lat": 21.9300, "lon": 86.7400},
+    "time": "2024-04-05T15:55:27Z",
+    "intensity": "Light",
+    "felt_reports": 345,
+    "damage": "None reported"
+  }
+]
