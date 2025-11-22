@@ -1,16 +1,19 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 import google.generativeai as genai
+from passlib.context import CryptContext
+import jwt
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -28,6 +31,14 @@ if GEMINI_API_KEY:
 else:
     gemini_model = None
     logging.warning("Gemini API key not found. AI features will be disabled.")
+
+# Security configuration
+SECRET_KEY = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production-12345678')
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+security = HTTPBearer()
 
 # Create the main app without a prefix
 app = FastAPI(title="Suraksha Setu API", version="1.0.0")
@@ -81,6 +92,143 @@ class CommunityReport(BaseModel):
     coordinates: Optional[Dict[str, float]] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: str = "pending"
+
+# ==================== AUTHENTICATION MODELS ====================
+
+class UserCreate(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    user_type: str  # student, scientist, admin, citizen
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class User(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    email: EmailStr
+    user_type: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    user: User
+
+# ==================== AUTHENTICATION UTILITIES ====================
+
+def hash_password(password: str) -> str:
+    """Hash a password"""
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against a hash"""
+    return pwd_context.verify(plain_password, hashed_password)
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """Create a JWT access token"""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
+    """Get current user from JWT token"""
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.JWTError:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+    
+    user_doc = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+    if user_doc is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if isinstance(user_doc.get('created_at'), str):
+        user_doc['created_at'] = datetime.fromisoformat(user_doc['created_at'])
+    
+    return User(**user_doc)
+
+# ==================== AUTHENTICATION ENDPOINTS ====================
+
+@api_router.post("/auth/register", response_model=Token, status_code=status.HTTP_201_CREATED)
+async def register(user_data: UserCreate):
+    """Register a new user"""
+    # Validate user type
+    valid_types = ["student", "scientist", "admin", "citizen"]
+    if user_data.user_type.lower() not in valid_types:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid user type. Must be one of: {', '.join(valid_types)}"
+        )
+    
+    # Check if user already exists
+    existing_user = await db.users.find_one({"email": user_data.email})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Create user document
+    user = User(
+        name=user_data.name,
+        email=user_data.email,
+        user_type=user_data.user_type.lower()
+    )
+    
+    user_doc = user.model_dump()
+    user_doc['password'] = hash_password(user_data.password)
+    user_doc['created_at'] = user_doc['created_at'].isoformat()
+    
+    await db.users.insert_one(user_doc)
+    
+    # Create access token
+    access_token = create_access_token(data={"sub": user.id})
+    
+    return Token(access_token=access_token, token_type="bearer", user=user)
+
+@api_router.post("/auth/login", response_model=Token)
+async def login(credentials: UserLogin):
+    """Login user and return JWT token"""
+    # Find user by email
+    user_doc = await db.users.find_one({"email": credentials.email})
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Verify password
+    if not verify_password(credentials.password, user_doc['password']):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Create user object (without password)
+    if isinstance(user_doc.get('created_at'), str):
+        user_doc['created_at'] = datetime.fromisoformat(user_doc['created_at'])
+    
+    user = User(
+        id=user_doc['id'],
+        name=user_doc['name'],
+        email=user_doc['email'],
+        user_type=user_doc['user_type'],
+        created_at=user_doc['created_at']
+    )
+    
+    # Create access token
+    access_token = create_access_token(data={"sub": user.id})
+    
+    return Token(access_token=access_token, token_type="bearer", user=user)
+
+@api_router.get("/auth/me", response_model=User)
+async def get_me(current_user: User = Depends(get_current_user)):
+    """Get current authenticated user"""
+    return current_user
 
 # ==================== BASIC ENDPOINTS ====================
 

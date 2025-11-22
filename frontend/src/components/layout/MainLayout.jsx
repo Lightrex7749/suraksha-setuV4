@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useLocation, Outlet } from 'react-router-dom';
+import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Map, 
@@ -13,12 +13,14 @@ import {
   Menu,
   X,
   Search,
-  UserCircle
+  UserCircle,
+  LogOut
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from '@/contexts/AuthContext';
 
 const SidebarItem = ({ icon: Icon, label, path, active, collapsed }) => (
   <Link 
@@ -37,8 +39,30 @@ const SidebarItem = ({ icon: Icon, label, path, active, collapsed }) => (
 
 const MainLayout = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  const getInitials = (name) => {
+    if (!name) return 'U';
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  };
+
+  const getUserTypeLabel = (type) => {
+    const labels = {
+      student: 'Student',
+      scientist: 'Scientist',
+      admin: 'Administrator',
+      citizen: 'Citizen'
+    };
+    return labels[type] || 'User';
+  };
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -99,18 +123,39 @@ const MainLayout = () => {
         </div>
 
         <div className="p-4 border-t border-border">
-          <div className={`flex items-center gap-3 ${collapsed ? 'justify-center' : ''}`}>
-            <Avatar className="h-9 w-9 border border-border">
-              <AvatarImage src="https://github.com/shadcn.png" />
-              <AvatarFallback>JD</AvatarFallback>
-            </Avatar>
-            {!collapsed && (
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">John Doe</span>
-                <span className="text-xs text-muted-foreground">Safety Officer</span>
+          {!collapsed ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-9 w-9 border border-border">
+                  <AvatarFallback>{user ? getInitials(user.name) : 'U'}</AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col flex-1 min-w-0">
+                  <span className="text-sm font-medium truncate">{user?.name || 'User'}</span>
+                  <span className="text-xs text-muted-foreground">{user ? getUserTypeLabel(user.user_type) : ''}</span>
+                </div>
               </div>
-            )}
-          </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+                onClick={handleLogout}
+                data-testid="logout-button"
+              >
+                <LogOut className="h-4 w-4" />
+                Logout
+              </Button>
+            </div>
+          ) : (
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="w-full"
+              onClick={handleLogout}
+              data-testid="logout-button-collapsed"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </aside>
 
