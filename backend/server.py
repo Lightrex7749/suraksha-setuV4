@@ -27,7 +27,8 @@ db = client[os.environ['DB_NAME']]
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+    # Using gemini-2.5-flash for better performance and quota
+    gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 else:
     gemini_model = None
     logging.warning("Gemini API key not found. AI features will be disabled.")

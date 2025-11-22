@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from '@/contexts/AuthContext';
+import Chatbot from '@/components/Chatbot';
 
 const SidebarItem = ({ icon: Icon, label, path, active, collapsed }) => (
   <Link 
@@ -205,6 +206,9 @@ const MainLayout = () => {
           <Outlet />
         </div>
       </main>
+
+      {/* Floating Chatbot */}
+      <Chatbot />
     </div>
   );
 };
