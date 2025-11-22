@@ -14,6 +14,9 @@ import json
 import google.generativeai as genai
 from passlib.context import CryptContext
 import jwt
+import httpx
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -59,6 +62,135 @@ def load_json_file(filename: str):
     except Exception as e:
         logging.error(f"Error loading {filename}: {str(e)}")
         return None
+
+# Initialize geocoder
+geolocator = Nominatim(user_agent="suraksha_setu_app")
+
+# API Integration Utilities
+async def geocode_location(location_name: str):
+    """Convert city/location name to coordinates"""
+    try:
+        location = geolocator.geocode(location_name, timeout=10)
+        if location:
+            return {
+                "lat": location.latitude,
+                "lon": location.longitude,
+                "display_name": location.address
+            }
+        return None
+    except (GeocoderTimedOut, GeocoderServiceError) as e:
+        logging.error(f"Geocoding error: {str(e)}")
+        return None
+
+async def fetch_open_meteo_weather(lat: float, lon: float):
+    """Fetch weather data from Open-Meteo API"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Current weather and hourly forecast
+            url = "https://api.open-meteo.com/v1/forecast"
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "current": "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,weathercode,cloudcover,windspeed_10m,winddirection_10m,pressure_msl",
+                "hourly": "temperature_2m,precipitation_probability,precipitation,rain,weathercode",
+                "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,rain_sum,weathercode,precipitation_probability_max",
+                "timezone": "auto",
+                "forecast_days": 7
+            }
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        logging.error(f"Open-Meteo API error: {str(e)}")
+        return None
+
+async def fetch_openaq_data(lat: float, lon: float, radius: int = 50000):
+    """Fetch air quality data from OpenAQ API"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # OpenAQ v3 API
+            url = "https://api.openaq.org/v3/locations"
+            params = {
+                "coordinates": f"{lat},{lon}",
+                "radius": radius,
+                "limit": 10,
+                "order_by": "distance"
+            }
+            headers = {
+                "Accept": "application/json"
+            }
+            response = await client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        logging.error(f"OpenAQ API error: {str(e)}")
+        return None
+
+def get_weather_condition(weathercode: int) -> str:
+    """Convert WMO weather code to readable condition"""
+    weather_codes = {
+        0: "Clear Sky",
+        1: "Mainly Clear",
+        2: "Partly Cloudy",
+        3: "Overcast",
+        45: "Foggy",
+        48: "Depositing Rime Fog",
+        51: "Light Drizzle",
+        53: "Moderate Drizzle",
+        55: "Dense Drizzle",
+        61: "Slight Rain",
+        63: "Moderate Rain",
+        65: "Heavy Rain",
+        71: "Slight Snow",
+        73: "Moderate Snow",
+        75: "Heavy Snow",
+        77: "Snow Grains",
+        80: "Slight Rain Showers",
+        81: "Moderate Rain Showers",
+        82: "Violent Rain Showers",
+        85: "Slight Snow Showers",
+        86: "Heavy Snow Showers",
+        95: "Thunderstorm",
+        96: "Thunderstorm with Slight Hail",
+        99: "Thunderstorm with Heavy Hail"
+    }
+    return weather_codes.get(weathercode, "Unknown")
+
+def calculate_aqi_from_pollutants(pollutants: Dict[str, float]) -> Dict[str, Any]:
+    """Calculate AQI and category from pollutant values"""
+    # Simplified AQI calculation based on PM2.5 (US EPA standard)
+    pm25 = pollutants.get("pm25", 0)
+    
+    if pm25 <= 12:
+        aqi = (50 / 12) * pm25
+        category = "Good"
+        color = "#00e400"
+    elif pm25 <= 35.4:
+        aqi = ((100 - 51) / (35.4 - 12.1)) * (pm25 - 12.1) + 51
+        category = "Moderate"
+        color = "#ffff00"
+    elif pm25 <= 55.4:
+        aqi = ((150 - 101) / (55.4 - 35.5)) * (pm25 - 35.5) + 101
+        category = "Unhealthy for Sensitive Groups"
+        color = "#ff7e00"
+    elif pm25 <= 150.4:
+        aqi = ((200 - 151) / (150.4 - 55.5)) * (pm25 - 55.5) + 151
+        category = "Unhealthy"
+        color = "#ff0000"
+    elif pm25 <= 250.4:
+        aqi = ((300 - 201) / (250.4 - 150.5)) * (pm25 - 150.5) + 201
+        category = "Very Unhealthy"
+        color = "#8f3f97"
+    else:
+        aqi = ((500 - 301) / (500.4 - 250.5)) * (pm25 - 250.5) + 301
+        category = "Hazardous"
+        color = "#7e0023"
+    
+    return {
+        "aqi": int(aqi),
+        "category": category,
+        "color": color
+    }
 
 # Define Models
 class StatusCheck(BaseModel):
@@ -325,6 +457,141 @@ async def get_daily_forecast():
         raise HTTPException(status_code=500, detail="Unable to load weather data")
     return data.get('daily', [])
 
+# ==================== LOCATION-BASED WEATHER ENDPOINTS ====================
+
+@api_router.get("/weather/location")
+async def get_weather_by_location(
+    q: Optional[str] = Query(None, description="City or location name"),
+    lat: Optional[float] = Query(None, description="Latitude"),
+    lon: Optional[float] = Query(None, description="Longitude")
+):
+    """Get weather data for a specific location using Open-Meteo API"""
+    
+    # Determine coordinates
+    if lat is not None and lon is not None:
+        coordinates = {"lat": lat, "lon": lon, "display_name": f"{lat}, {lon}"}
+    elif q:
+        coordinates = await geocode_location(q)
+        if not coordinates:
+            raise HTTPException(status_code=404, detail=f"Location '{q}' not found")
+    else:
+        raise HTTPException(status_code=400, detail="Either 'q' (location name) or 'lat' and 'lon' must be provided")
+    
+    # Fetch weather data from Open-Meteo
+    weather_data = await fetch_open_meteo_weather(coordinates["lat"], coordinates["lon"])
+    
+    if not weather_data:
+        # Fallback to mock data
+        logging.warning("Open-Meteo API failed, using mock data")
+        mock_data = load_json_file('weather_data.json')
+        if mock_data:
+            mock_data['current']['location'] = coordinates.get("display_name", "Unknown")
+            mock_data['current']['coordinates'] = {"lat": coordinates["lat"], "lon": coordinates["lon"]}
+            return mock_data
+        raise HTTPException(status_code=503, detail="Weather service temporarily unavailable")
+    
+    # Transform Open-Meteo data to our format
+    current = weather_data.get('current', {})
+    hourly = weather_data.get('hourly', {})
+    daily = weather_data.get('daily', {})
+    
+    # Process current weather
+    current_weather = {
+        "location": coordinates.get("display_name", "Unknown"),
+        "coordinates": {"lat": coordinates["lat"], "lon": coordinates["lon"]},
+        "temperature": int(current.get('temperature_2m', 0)),
+        "feels_like": int(current.get('apparent_temperature', 0)),
+        "condition": get_weather_condition(current.get('weathercode', 0)),
+        "humidity": int(current.get('relative_humidity_2m', 0)),
+        "wind_speed": int(current.get('windspeed_10m', 0)),
+        "wind_direction": int(current.get('winddirection_10m', 0)),
+        "pressure": int(current.get('pressure_msl', 0)),
+        "cloud_cover": int(current.get('cloudcover', 0)),
+        "rain": current.get('rain', 0),
+        "precipitation": current.get('precipitation', 0),
+        "last_updated": current.get('time', datetime.now(timezone.utc).isoformat())
+    }
+    
+    # Process hourly forecast (next 24 hours)
+    hourly_forecast = []
+    if hourly and 'time' in hourly:
+        for i in range(min(24, len(hourly['time']))):
+            hour_time = hourly['time'][i] if i < len(hourly['time']) else None
+            if hour_time:
+                hourly_forecast.append({
+                    "time": hour_time,
+                    "temp": int(hourly['temperature_2m'][i]) if i < len(hourly.get('temperature_2m', [])) else 0,
+                    "condition": get_weather_condition(hourly['weathercode'][i]) if i < len(hourly.get('weathercode', [])) else "Unknown",
+                    "rain": int(hourly['precipitation_probability'][i]) if i < len(hourly.get('precipitation_probability', [])) else 0,
+                    "precipitation": hourly['precipitation'][i] if i < len(hourly.get('precipitation', [])) else 0
+                })
+    
+    # Process daily forecast
+    daily_forecast = []
+    if daily and 'time' in daily:
+        for i in range(min(7, len(daily['time']))):
+            day_time = daily['time'][i] if i < len(daily['time']) else None
+            if day_time:
+                daily_forecast.append({
+                    "date": day_time,
+                    "high": int(daily['temperature_2m_max'][i]) if i < len(daily.get('temperature_2m_max', [])) else 0,
+                    "low": int(daily['temperature_2m_min'][i]) if i < len(daily.get('temperature_2m_min', [])) else 0,
+                    "condition": get_weather_condition(daily['weathercode'][i]) if i < len(daily.get('weathercode', [])) else "Unknown",
+                    "rain": int(daily['precipitation_probability_max'][i]) if i < len(daily.get('precipitation_probability_max', [])) else 0,
+                    "precipitation": daily['precipitation_sum'][i] if i < len(daily.get('precipitation_sum', [])) else 0
+                })
+    
+    return {
+        "current": current_weather,
+        "hourly": hourly_forecast,
+        "daily": daily_forecast,
+        "source": "open-meteo"
+    }
+
+@api_router.get("/weather/rainfall-trends")
+async def get_rainfall_trends(
+    lat: float = Query(..., description="Latitude"),
+    lon: float = Query(..., description="Longitude"),
+    days: int = Query(7, ge=1, le=16, description="Number of days for forecast")
+):
+    """Get rainfall trend data for visualization"""
+    
+    weather_data = await fetch_open_meteo_weather(lat, lon)
+    
+    if not weather_data:
+        raise HTTPException(status_code=503, detail="Weather service temporarily unavailable")
+    
+    daily = weather_data.get('daily', {})
+    hourly = weather_data.get('hourly', {})
+    
+    # Daily rainfall trends
+    daily_trends = []
+    if daily and 'time' in daily:
+        for i in range(min(days, len(daily['time']))):
+            daily_trends.append({
+                "date": daily['time'][i],
+                "rainfall": daily['rain_sum'][i] if i < len(daily.get('rain_sum', [])) else 0,
+                "precipitation": daily['precipitation_sum'][i] if i < len(daily.get('precipitation_sum', [])) else 0,
+                "probability": daily['precipitation_probability_max'][i] if i < len(daily.get('precipitation_probability_max', [])) else 0
+            })
+    
+    # Hourly rainfall for next 48 hours
+    hourly_trends = []
+    if hourly and 'time' in hourly:
+        for i in range(min(48, len(hourly['time']))):
+            hourly_trends.append({
+                "time": hourly['time'][i],
+                "rainfall": hourly['rain'][i] if i < len(hourly.get('rain', [])) else 0,
+                "precipitation": hourly['precipitation'][i] if i < len(hourly.get('precipitation', [])) else 0,
+                "probability": hourly['precipitation_probability'][i] if i < len(hourly.get('precipitation_probability', [])) else 0
+            })
+    
+    return {
+        "daily_trends": daily_trends,
+        "hourly_trends": hourly_trends,
+        "coordinates": {"lat": lat, "lon": lon}
+    }
+
 # ==================== ALERTS ENDPOINTS ====================
 
 @api_router.get("/alerts")
@@ -393,6 +660,154 @@ async def get_aqi_forecast():
     if data is None:
         raise HTTPException(status_code=500, detail="Unable to load AQI data")
     return data.get('forecast', [])
+
+# ==================== LOCATION-BASED AQI ENDPOINTS ====================
+
+@api_router.get("/aqi/location")
+async def get_aqi_by_location(
+    q: Optional[str] = Query(None, description="City or location name"),
+    lat: Optional[float] = Query(None, description="Latitude"),
+    lon: Optional[float] = Query(None, description="Longitude"),
+    radius: int = Query(50000, description="Search radius in meters")
+):
+    """Get real-time AQI data for a specific location using OpenAQ API"""
+    
+    # Determine coordinates
+    if lat is not None and lon is not None:
+        coordinates = {"lat": lat, "lon": lon}
+    elif q:
+        coordinates = await geocode_location(q)
+        if not coordinates:
+            raise HTTPException(status_code=404, detail=f"Location '{q}' not found")
+    else:
+        raise HTTPException(status_code=400, detail="Either 'q' (location name) or 'lat' and 'lon' must be provided")
+    
+    # Fetch AQI data from OpenAQ
+    aqi_data = await fetch_openaq_data(coordinates["lat"], coordinates["lon"], radius)
+    
+    if not aqi_data or not aqi_data.get('results'):
+        # Fallback to mock data
+        logging.warning("OpenAQ API failed or no stations found, using mock data")
+        mock_data = load_json_file('aqi_data.json')
+        if mock_data:
+            mock_data['current']['location'] = coordinates.get("display_name", "Unknown")
+            mock_data['source'] = "mock"
+            return mock_data
+        raise HTTPException(status_code=503, detail="AQI service temporarily unavailable")
+    
+    # Process OpenAQ data
+    stations = []
+    all_measurements = {}
+    
+    for location in aqi_data.get('results', [])[:10]:
+        station_name = location.get('name', 'Unknown Station')
+        station_coords = location.get('coordinates', {})
+        
+        # Get latest measurements
+        if 'measurements' in location or 'parameters' in location:
+            measurements = location.get('measurements', []) or location.get('parameters', [])
+            
+            station_pollutants = {}
+            for measurement in measurements:
+                parameter = measurement.get('parameter', '')
+                value = measurement.get('value') or measurement.get('lastValue', 0)
+                
+                if parameter in ['pm25', 'pm2.5', 'pm10', 'no2', 'so2', 'co', 'o3']:
+                    param_key = parameter.replace('.', '')
+                    station_pollutants[param_key] = value
+                    
+                    # Aggregate for overall location
+                    if param_key not in all_measurements:
+                        all_measurements[param_key] = []
+                    all_measurements[param_key].append(value)
+            
+            # Calculate station AQI
+            if 'pm25' in station_pollutants or 'pm2.5' in station_pollutants:
+                pm25_value = station_pollutants.get('pm25', station_pollutants.get('pm2.5', 0))
+                aqi_info = calculate_aqi_from_pollutants({"pm25": pm25_value})
+                
+                stations.append({
+                    "name": station_name,
+                    "aqi": aqi_info['aqi'],
+                    "category": aqi_info['category'],
+                    "lat": station_coords.get('latitude'),
+                    "lon": station_coords.get('longitude'),
+                    "pollutants": station_pollutants
+                })
+    
+    # Calculate overall AQI from average
+    overall_pollutants = {}
+    for param, values in all_measurements.items():
+        if values:
+            overall_pollutants[param] = sum(values) / len(values)
+    
+    overall_aqi_info = calculate_aqi_from_pollutants(overall_pollutants)
+    
+    return {
+        "current": {
+            "location": coordinates.get("display_name", "Unknown"),
+            "aqi": overall_aqi_info['aqi'],
+            "category": overall_aqi_info['category'],
+            "primary_pollutant": "PM2.5",
+            "color": overall_aqi_info['color'],
+            "coordinates": {"lat": coordinates["lat"], "lon": coordinates["lon"]},
+            "pollutants": overall_pollutants,
+            "last_updated": datetime.now(timezone.utc).isoformat()
+        },
+        "stations": stations,
+        "source": "openaq"
+    }
+
+@api_router.get("/aqi/realtime-stations")
+async def get_realtime_aqi_stations(
+    lat: float = Query(..., description="Latitude"),
+    lon: float = Query(..., description="Longitude"),
+    radius: int = Query(100000, description="Search radius in meters")
+):
+    """Get real-time AQI data from nearby monitoring stations"""
+    
+    aqi_data = await fetch_openaq_data(lat, lon, radius)
+    
+    if not aqi_data or not aqi_data.get('results'):
+        # Return mock data as fallback
+        mock_data = load_json_file('aqi_data.json')
+        return mock_data.get('stations', []) if mock_data else []
+    
+    stations = []
+    for location in aqi_data.get('results', [])[:20]:
+        station_name = location.get('name', 'Unknown Station')
+        station_coords = location.get('coordinates', {})
+        
+        # Get measurements
+        if 'measurements' in location or 'parameters' in location:
+            measurements = location.get('measurements', []) or location.get('parameters', [])
+            
+            station_pollutants = {}
+            for measurement in measurements:
+                parameter = measurement.get('parameter', '')
+                value = measurement.get('value') or measurement.get('lastValue', 0)
+                
+                if parameter in ['pm25', 'pm2.5', 'pm10', 'no2', 'so2', 'co', 'o3']:
+                    param_key = parameter.replace('.', '')
+                    station_pollutants[param_key] = value
+            
+            # Calculate station AQI
+            if 'pm25' in station_pollutants or 'pm2.5' in station_pollutants:
+                pm25_value = station_pollutants.get('pm25', station_pollutants.get('pm2.5', 0))
+                aqi_info = calculate_aqi_from_pollutants({"pm25": pm25_value})
+                
+                stations.append({
+                    "name": station_name,
+                    "aqi": aqi_info['aqi'],
+                    "category": aqi_info['category'],
+                    "color": aqi_info['color'],
+                    "lat": station_coords.get('latitude'),
+                    "lon": station_coords.get('longitude'),
+                    "pollutants": station_pollutants,
+                    "distance": location.get('distance', 0)
+                })
+    
+    return stations
 
 # ==================== DISASTERS ENDPOINTS ====================
 

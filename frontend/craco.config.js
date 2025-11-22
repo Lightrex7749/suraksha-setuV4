@@ -1,5 +1,7 @@
 // craco.config.js
 const path = require("path");
+const CopyWebpackPlugin = require("copy-webpack-plugin");
+const webpack = require("webpack");
 require("dotenv").config();
 
 // Environment variable overrides
@@ -35,6 +37,22 @@ const webpackConfig = {
       '@': path.resolve(__dirname, 'src'),
     },
     configure: (webpackConfig) => {
+      
+      // Configure Cesium
+      const cesiumSource = 'node_modules/cesium/Build/Cesium';
+      webpackConfig.plugins.push(
+        new CopyWebpackPlugin({
+          patterns: [
+            { from: path.join(cesiumSource, 'Workers'), to: 'cesium/Workers' },
+            { from: path.join(cesiumSource, 'ThirdParty'), to: 'cesium/ThirdParty' },
+            { from: path.join(cesiumSource, 'Assets'), to: 'cesium/Assets' },
+            { from: path.join(cesiumSource, 'Widgets'), to: 'cesium/Widgets' },
+          ],
+        }),
+        new webpack.DefinePlugin({
+          CESIUM_BASE_URL: JSON.stringify('/cesium'),
+        })
+      );
 
       // Disable hot reload completely if environment variable is set
       if (config.disableHotReload) {

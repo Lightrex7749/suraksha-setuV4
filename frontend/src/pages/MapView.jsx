@@ -1,143 +1,356 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Layers, 
-  Map as MapIcon, 
-  Navigation, 
-  Eye, 
-  Video, 
-  Thermometer, 
-  Wind, 
-  Droplets, 
+  Search,
+  MapPin,
+  Loader2,
+  Wind,
+  Droplets,
   Activity,
-  Maximize2,
-  Settings
+  Eye,
+  CloudRain,
+  AlertCircle,
+  Layers
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import Map2D from '@/components/maps/Map2D';
+import Map3D from '@/components/maps/Map3D';
+import { 
+  getWeatherByLocation, 
+  getAQIByLocation, 
+  getRainfallTrends,
+  getRealtimeAQIStations,
+  getCycloneTrack 
+} from '@/services/weatherApi';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar } from 'recharts';
 
 const MapView = () => {
-  const [activeLayer, setActiveLayer] = useState('standard');
-  const [showLayers, setShowLayers] = useState(true);
+  const [is3D, setIs3D] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [location, setLocation] = useState('');
+  const [center, setCenter] = useState([20.5937, 78.9629]); // Default: India center
+  const [weatherData, setWeatherData] = useState(null);
+  const [aqiData, setAQIData] = useState(null);
+  const [aqiStations, setAQIStations] = useState([]);
+  const [rainfallData, setRainfallData] = useState(null);
+  const [cycloneTrack, setCycloneTrack] = useState([]);
+  const [error, setError] = useState(null);
 
-  const layers = [
-    { id: 'flood', label: 'Flood Zones', icon: Droplets, color: 'text-blue-500' },
-    { id: 'cyclone', label: 'Cyclone Path', icon: Wind, color: 'text-indigo-500' },
-    { id: 'aqi', label: 'AQI Heatmap', icon: Activity, color: 'text-yellow-500' },
-    { id: 'fire', label: 'Fire Hotspots', icon: Thermometer, color: 'text-red-500' },
-  ];
+  // Layer visibility controls
+  const [showLayers, setShowLayers] = useState({
+    aqi: true,
+    rainfall: true,
+    cyclone: true,
+  });
+
+  // Load initial data for default location
+  useEffect(() => {
+    loadLocationData(center[0], center[1]);
+  }, []);
+
+  const loadLocationData = async (lat, lon) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Fetch all data in parallel
+      const [weather, aqi, rainfall, stations, cyclone] = await Promise.allSettled([
+        getWeatherByLocation({ lat, lon }),
+        getAQIByLocation({ lat, lon }),
+        getRainfallTrends(lat, lon),
+        getRealtimeAQIStations(lat, lon),
+        getCycloneTrack()
+      ]);
+
+      if (weather.status === 'fulfilled') {
+        setWeatherData(weather.value);
+      }
+
+      if (aqi.status === 'fulfilled') {
+        setAQIData(aqi.value);
+      }
+
+      if (rainfall.status === 'fulfilled') {
+        setRainfallData(rainfall.value);
+      }
+
+      if (stations.status === 'fulfilled') {
+        setAQIStations(stations.value);
+      }
+
+      if (cyclone.status === 'fulfilled' && cyclone.value) {
+        setCycloneTrack(cyclone.value);
+      }
+
+    } catch (err) {
+      console.error('Error loading location data:', err);
+      setError('Failed to load some data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!location.trim()) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Check if input is coordinates (lat,lon format)
+      const coordMatch = location.match(/^([\-\d.]+),\s*([\-\d.]+)$/);
+      
+      if (coordMatch) {
+        const lat = parseFloat(coordMatch[1]);
+        const lon = parseFloat(coordMatch[2]);
+        setCenter([lat, lon]);
+        await loadLocationData(lat, lon);
+      } else {
+        // Search by city name
+        const weather = await getWeatherByLocation(location);
+        if (weather?.current?.coordinates) {
+          const { lat, lon } = weather.current.coordinates;
+          setCenter([lat, lon]);
+          await loadLocationData(lat, lon);
+        }
+      }
+    } catch (err) {
+      console.error('Search error:', err);
+      setError('Location not found. Try searching with city name or coordinates (lat, lon)');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Transform rainfall data for visualization
+  const rainfallChartData = rainfallData?.daily_trends?.slice(0, 7).map(day => ({
+    date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    rainfall: day.rainfall,
+    probability: day.probability
+  })) || [];
+
+  // Transform rainfall data for map visualization
+  const rainfallMapData = rainfallData?.daily_trends?.slice(0, 5).map((day, index) => ({
+    lat: center[0] + (Math.random() - 0.5) * 0.5,
+    lon: center[1] + (Math.random() - 0.5) * 0.5,
+    intensity: day.probability,
+    amount: day.rainfall
+  })) || [];
 
   return (
-    <div className="h-[calc(100vh-8rem)] relative rounded-xl overflow-hidden border border-border bg-muted/30 group">
-      {/* Map Placeholder / Actual Map Container */}
-      <div className="absolute inset-0 bg-[#e5e7eb] dark:bg-[#1f2937] flex items-center justify-center">
-        <div className="text-center opacity-50">
-          <MapIcon className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-          <p className="text-lg font-medium">Interactive Map Module</p>
-          <p className="text-sm">Leaflet / Mapbox Integration Area</p>
+    <div className="h-screen flex flex-col gap-4 p-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Weather Visualization Dashboard</h1>
+          <p className="text-muted-foreground">Interactive 2D/3D maps with real-time weather, AQI, and cyclone tracking</p>
         </div>
-        
-        {/* Mock Map Elements for Visuals */}
-        <div className="absolute top-1/4 left-1/4 w-32 h-32 bg-blue-500/20 rounded-full blur-xl animate-pulse"></div>
-        <div className="absolute bottom-1/3 right-1/3 w-48 h-48 bg-red-500/10 rounded-full blur-2xl"></div>
-        
-        {/* Mock Pins */}
-        <div className="absolute top-1/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-           <div className="relative">
-             <div className="w-4 h-4 bg-destructive rounded-full animate-ping absolute"></div>
-             <div className="w-4 h-4 bg-destructive rounded-full border-2 border-white relative z-10"></div>
-             <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-card px-2 py-1 rounded shadow-lg text-xs font-bold whitespace-nowrap">
-               Cyclone Eye
-             </div>
-           </div>
+
+        {/* 2D/3D Toggle */}
+        <div className="flex items-center gap-3 bg-muted px-4 py-2 rounded-full">
+          <span className={`text-sm font-medium ${!is3D ? 'text-primary' : 'text-muted-foreground'}`}>2D Map</span>
+          <Switch 
+            checked={is3D} 
+            onCheckedChange={setIs3D}
+            data-testid="map-toggle-switch"
+          />
+          <span className={`text-sm font-medium ${is3D ? 'text-primary' : 'text-muted-foreground'}`}>3D Map</span>
         </div>
       </div>
 
-      {/* Floating Controls - Top Left */}
-      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
-        <Card className="p-2 flex flex-col gap-2 bg-background/90 backdrop-blur">
-          <Button variant="ghost" size="icon" title="Zoom In">
-            <span className="text-xl font-bold">+</span>
-          </Button>
-          <Button variant="ghost" size="icon" title="Zoom Out">
-            <span className="text-xl font-bold">-</span>
-          </Button>
-          <Button variant="ghost" size="icon" title="My Location">
-            <Navigation className="w-5 h-5" />
-          </Button>
-        </Card>
-      </div>
-
-      {/* Layer Control - Top Right */}
-      <div className="absolute top-4 right-4 z-10">
-        <Card className="w-64 bg-background/90 backdrop-blur p-4 shadow-lg">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-semibold flex items-center gap-2">
-              <Layers className="w-4 h-4" /> Map Layers
-            </h3>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowLayers(!showLayers)}>
-              <Settings className="w-4 h-4" />
+      {/* Search Bar */}
+      <Card>
+        <CardContent className="pt-6">
+          <form onSubmit={handleSearch} className="flex gap-4">
+            <div className="flex-1">
+              <Input
+                placeholder="Search by city name or coordinates (e.g., 'Mumbai' or '19.0760, 72.8777')"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                className="w-full"
+                data-testid="location-search-input"
+              />
+            </div>
+            <Button type="submit" disabled={loading} data-testid="search-location-button">
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Search className="w-4 h-4" />
+              )}
+              <span className="ml-2">Search</span>
             </Button>
-          </div>
-          
-          {showLayers && (
-            <div className="space-y-3">
-              {layers.map((layer) => (
-                <div key={layer.id} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <layer.icon className={`w-4 h-4 ${layer.color}`} />
-                    <Label htmlFor={layer.id} className="text-sm cursor-pointer">{layer.label}</Label>
-                  </div>
-                  <Switch id={layer.id} />
-                </div>
-              ))}
-              <div className="pt-2 border-t border-border mt-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">3D Buildings</span>
-                  <Switch />
-                </div>
-              </div>
+          </form>
+          {error && (
+            <div className="mt-2 flex items-center gap-2 text-destructive text-sm">
+              <AlertCircle className="w-4 h-4" />
+              {error}
             </div>
           )}
-        </Card>
-      </div>
+        </CardContent>
+      </Card>
 
-      {/* AR/VR Modes - Bottom Center */}
-      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10 flex gap-4">
-        <Button className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg rounded-full px-6">
-          <Video className="w-4 h-4 mr-2" />
-          VR Simulation
-        </Button>
-        <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg rounded-full px-6">
-          <Eye className="w-4 h-4 mr-2" />
-          AR Danger View
-        </Button>
-      </div>
+      {/* Main Content */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0">
+        {/* Map Container */}
+        <div className="lg:col-span-3 relative rounded-lg overflow-hidden border border-border bg-muted/30">
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-50">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          )}
+          
+          <AnimatePresence mode="wait">
+            {!is3D ? (
+              <motion.div
+                key="2d-map"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="h-full w-full"
+              >
+                <Map2D 
+                  center={center} 
+                  aqiStations={aqiStations}
+                  cycloneTrack={cycloneTrack}
+                  rainfallData={rainfallMapData}
+                  showLayers={showLayers}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="3d-map"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="h-full w-full"
+              >
+                <Map3D 
+                  center={center} 
+                  aqiStations={aqiStations}
+                  cycloneTrack={cycloneTrack}
+                  rainfallData={rainfallMapData}
+                  showLayers={showLayers}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
-      {/* Legend - Bottom Right */}
-      <div className="absolute bottom-4 right-4 z-10">
-        <Card className="p-3 bg-background/90 backdrop-blur text-xs space-y-2">
-          <div className="font-semibold mb-1">Risk Levels</div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-destructive"></span>
-            <span>Critical</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-orange-500"></span>
-            <span>High</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
-            <span>Moderate</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-green-500"></span>
-            <span>Safe</span>
-          </div>
-        </Card>
+        {/* Side Panel */}
+        <div className="lg:col-span-1 space-y-4 overflow-y-auto">
+          {/* Layer Controls */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Layers className="w-5 h-5" />
+                Map Layers
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-yellow-500" />
+                  <Label className="text-sm">AQI Stations</Label>
+                </div>
+                <Switch 
+                  checked={showLayers.aqi}
+                  onCheckedChange={(checked) => setShowLayers(prev => ({ ...prev, aqi: checked }))}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CloudRain className="w-4 h-4 text-blue-500" />
+                  <Label className="text-sm">Rainfall Zones</Label>
+                </div>
+                <Switch 
+                  checked={showLayers.rainfall}
+                  onCheckedChange={(checked) => setShowLayers(prev => ({ ...prev, rainfall: checked }))}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Wind className="w-4 h-4 text-red-500" />
+                  <Label className="text-sm">Cyclone Path</Label>
+                </div>
+                <Switch 
+                  checked={showLayers.cyclone}
+                  onCheckedChange={(checked) => setShowLayers(prev => ({ ...prev, cyclone: checked }))}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Weather Info */}
+          {weatherData && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Current Weather</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="text-3xl font-bold">{weatherData.current.temperature}°C</div>
+                <div className="text-muted-foreground">{weatherData.current.condition}</div>
+                <div className="grid grid-cols-2 gap-2 text-sm mt-4">
+                  <div>
+                    <div className="text-muted-foreground">Humidity</div>
+                    <div className="font-medium">{weatherData.current.humidity}%</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Wind</div>
+                    <div className="font-medium">{weatherData.current.wind_speed} km/h</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* AQI Info */}
+          {aqiData && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Air Quality</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-3xl font-bold">{aqiData.current.aqi}</div>
+                  <Badge 
+                    variant="secondary" 
+                    style={{ backgroundColor: aqiData.current.color }}
+                    className="text-white"
+                  >
+                    {aqiData.current.category}
+                  </Badge>
+                </div>
+                <div className="text-sm text-muted-foreground">Primary: {aqiData.current.primary_pollutant}</div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Rainfall Trend Chart */}
+          {rainfallChartData.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">7-Day Rainfall Forecast</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={150}>
+                  <BarChart data={rainfallChartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip />
+                    <Bar dataKey="rainfall" fill="#3b82f6" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </div>
     </div>
   );
