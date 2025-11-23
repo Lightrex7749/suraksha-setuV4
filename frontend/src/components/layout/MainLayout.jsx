@@ -90,7 +90,7 @@ const MainLayout = () => {
           {!collapsed && (
             <div className="flex items-center gap-2 font-bold text-xl tracking-tight text-primary">
               <ShieldAlert className="h-6 w-6" />
-              <span>Suraksha<span className="text-foreground">AI</span></span>
+              <span>Suraksha<span className="text-foreground"> Setu</span></span>
             </div>
           )}
           {collapsed && <ShieldAlert className="h-6 w-6 text-primary mx-auto" />}
