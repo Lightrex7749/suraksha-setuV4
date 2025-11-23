@@ -1433,6 +1433,17 @@ async def get_dashboard_summary():
         logging.error(f"Dashboard summary error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error generating dashboard summary")
 
+# Health check endpoint for Render
+@app.get("/")
+async def root():
+    """Root endpoint for health checks"""
+    return {"status": "healthy", "message": "Suraksha Setu API is running"}
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
 # Include the router in the main app
 app.include_router(api_router)
 
