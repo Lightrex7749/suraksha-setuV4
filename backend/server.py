@@ -1178,11 +1178,9 @@ async def chatbot_message(request: ChatbotMessageRequest):
         raise HTTPException(status_code=503, detail="AI service is not available")
     
     try:
-        # Get conversation history for context
-        history = await db.chat_messages.find(
-            {"session_id": request.session_id},
-            {"_id": 0}
-        ).sort("timestamp", 1).limit(10).to_list(10)
+        # Get conversation history for context from in-memory storage
+        history = [msg for msg in in_memory_db["chat_messages"] 
+                   if msg.get("session_id") == request.session_id][-10:]
         
         # Get real-time disaster context
         disaster_context = await get_disaster_context()
@@ -1240,10 +1238,10 @@ Response:"""
             context=disaster_context
         )
         
-        # Save to database
+        # Save to in-memory storage
         message_doc = chat_message.model_dump()
         message_doc['timestamp'] = message_doc['timestamp'].isoformat()
-        await db.chat_messages.insert_one(message_doc)
+        in_memory_db["chat_messages"].append(message_doc)
         
         return chat_message
         
