@@ -45,8 +45,8 @@ else:
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Using gemini-2.5-flash for better performance and quota
-    gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+    # Using gemini-1.5-flash for better performance
+    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 else:
     gemini_model = None
     logging.warning("Gemini API key not found. AI features will be disabled.")
@@ -1230,13 +1230,14 @@ CRITICAL INSTRUCTIONS:
 Response:"""
 
         response = gemini_model.generate_content(prompt)
+        response_text = response.text if hasattr(response, 'text') else str(response)
         
         # Create chat message
         chat_message = ChatMessage(
             session_id=request.session_id,
             user_id=request.user_id,
             message=request.message,
-            response=response.text,
+            response=response_text,
             context=disaster_context
         )
         
@@ -1249,7 +1250,9 @@ Response:"""
         
     except Exception as e:
         logging.error(f"Chatbot message error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error processing chatbot message")
+        import traceback
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error processing chatbot message: {str(e)}")
 
 @api_router.get("/chatbot/history")
 async def get_chat_history(session_id: str, limit: int = Query(default=50, le=100)):
