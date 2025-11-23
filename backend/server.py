@@ -21,10 +21,25 @@ from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# In-memory storage (replace with MongoDB in production)
+in_memory_db = {
+    "users": {},
+    "chat_messages": [],
+    "community_reports": [],
+    "status_checks": []
+}
+
+# MongoDB connection (optional - for future use)
+mongo_url = os.environ.get('MONGO_URL')
+if mongo_url:
+    client = AsyncIOMotorClient(mongo_url)
+    db = client[os.environ.get('DB_NAME', 'suraksha_setu')]
+    use_mongo = True
+else:
+    client = None
+    db = None
+    use_mongo = False
+    logging.warning("MongoDB not configured. Using in-memory storage.")
 
 # Configure Gemini AI
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
@@ -300,14 +315,17 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except jwt.JWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
     
-    user_doc = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+    # Get user from in-memory storage
+    user_doc = in_memory_db["users"].get(user_id)
     if user_doc is None:
         raise HTTPException(status_code=404, detail="User not found")
     
-    if isinstance(user_doc.get('created_at'), str):
-        user_doc['created_at'] = datetime.fromisoformat(user_doc['created_at'])
+    # Return user without password
+    user_data = {k: v for k, v in user_doc.items() if k != 'password'}
+    if isinstance(user_data.get('created_at'), str):
+        user_data['created_at'] = datetime.fromisoformat(user_data['created_at'])
     
-    return User(**user_doc)
+    return User(**user_data)
 
 # ==================== AUTHENTICATION ENDPOINTS ====================
 
@@ -323,7 +341,7 @@ async def register(user_data: UserCreate):
         )
     
     # Check if user already exists
-    existing_user = await db.users.find_one({"email": user_data.email})
+    existing_user = any(u.get('email') == user_data.email for u in in_memory_db["users"].values())
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
@@ -338,7 +356,8 @@ async def register(user_data: UserCreate):
     user_doc['password'] = hash_password(user_data.password)
     user_doc['created_at'] = user_doc['created_at'].isoformat()
     
-    await db.users.insert_one(user_doc)
+    # Store in memory
+    in_memory_db["users"][user.id] = user_doc
     
     # Create access token
     access_token = create_access_token(data={"sub": user.id})
@@ -348,8 +367,13 @@ async def register(user_data: UserCreate):
 @api_router.post("/auth/login", response_model=Token)
 async def login(credentials: UserLogin):
     """Login user and return JWT token"""
-    # Find user by email
-    user_doc = await db.users.find_one({"email": credentials.email})
+    # Find user by email in memory
+    user_doc = None
+    for uid, user in in_memory_db["users"].items():
+        if user.get('email') == credentials.email:
+            user_doc = user
+            break
+    
     if not user_doc:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
