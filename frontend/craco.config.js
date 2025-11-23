@@ -39,7 +39,7 @@ const webpackConfig = {
     configure: (webpackConfig) => {
       
       // Configure Cesium
-      const cesiumSource = 'node_modules/cesium/Build/Cesium';
+      const cesiumSource = path.resolve(__dirname, 'node_modules/cesium/Build/Cesium');
       webpackConfig.plugins.push(
         new CopyWebpackPlugin({
           patterns: [
@@ -53,6 +53,12 @@ const webpackConfig = {
           CESIUM_BASE_URL: JSON.stringify('/cesium'),
         })
       );
+      
+      // Cesium module resolution
+      webpackConfig.module = {
+        ...webpackConfig.module,
+        unknownContextCritical: false,
+      };
 
       // Disable hot reload completely if environment variable is set
       if (config.disableHotReload) {

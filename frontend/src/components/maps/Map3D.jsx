@@ -1,7 +1,9 @@
 import React, { useEffect, useRef } from 'react';
 import { Viewer, Entity, PolylineGraphics, EntityDescription, CameraFlyTo, BillboardGraphics } from 'resium';
-import { Cartesian3, Color, Ion, Terrain } from 'cesium';
+import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
+
+const { Cartesian3, Color, Ion, Terrain } = Cesium;
 
 // Set Cesium Ion token
 const CESIUM_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI3MjBkYTE5OC1mY2EwLTRkMmQtYmRiMC05YTAxNDI1MWI2MTIiLCJpZCI6MzYyOTAzLCJpYXQiOjE3NjM4NDk1NjR9.5XcrizHm7rKiSxsPvgJq53h5QFEcMu5SbhAl71dnDFI';
