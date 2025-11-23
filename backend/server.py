@@ -45,8 +45,8 @@ else:
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Using gemini-1.5-flash for better performance
-    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+    # Using gemini-2.0-flash-exp for better performance
+    gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
 else:
     gemini_model = None
     logging.warning("Gemini API key not found. AI features will be disabled.")
