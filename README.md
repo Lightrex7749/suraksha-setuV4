@@ -91,11 +91,15 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-4. Create `.env` file:
+4. Create `.env` file (copy from `.env.example`):
 ```env
 MONGO_URL=your_mongodb_connection_string
 DB_NAME=suraksha_setu
+WAQI_API_KEY=your_waqi_api_key  # Get free key at https://aqicn.org/data-platform/token/
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
+
+> **Important**: The app uses WAQI (World Air Quality Index) for real-time AQI data. The demo token provides limited data. Get a FREE API key at https://aqicn.org/data-platform/token/ for location-specific AQI.
 
 5. Run the server:
 ```bash

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -91,18 +91,49 @@ geolocator = Nominatim(user_agent="suraksha_setu_app")
 
 # API Integration Utilities
 async def geocode_location(location_name: str):
-    """Convert city/location name to coordinates"""
+    """Convert city/location name to coordinates with improved accuracy"""
     try:
-        location = geolocator.geocode(location_name, timeout=10)
+        # First attempt: Try exact search
+        location = geolocator.geocode(location_name, timeout=10, exactly_one=True)
+        
         if location:
             return {
                 "lat": location.latitude,
                 "lon": location.longitude,
                 "display_name": location.address
             }
+        
+        # Second attempt: Try adding "India" if no result (for Indian cities)
+        if not location and ',' not in location_name and 'india' not in location_name.lower():
+            location = geolocator.geocode(f"{location_name}, India", timeout=10, exactly_one=True)
+            if location:
+                return {
+                    "lat": location.latitude,
+                    "lon": location.longitude,
+                    "display_name": location.address
+                }
+        
+        # Third attempt: Try broader search with multiple results
+        if not location:
+            locations = geolocator.geocode(location_name, timeout=10, exactly_one=False, limit=5)
+            if locations:
+                # Return the first result with highest relevance
+                best_location = locations[0]
+                return {
+                    "lat": best_location.latitude,
+                    "lon": best_location.longitude,
+                    "display_name": best_location.address
+                }
+        
         return None
-    except (GeocoderTimedOut, GeocoderServiceError) as e:
-        logging.error(f"Geocoding error: {str(e)}")
+    except GeocoderTimedOut:
+        logging.error(f"Geocoding timeout for: {location_name}")
+        return None
+    except GeocoderServiceError as e:
+        logging.error(f"Geocoding service error: {str(e)}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected geocoding error: {str(e)}")
         return None
 
 async def fetch_open_meteo_weather(lat: float, lon: float):
@@ -115,7 +146,7 @@ async def fetch_open_meteo_weather(lat: float, lon: float):
                 "latitude": lat,
                 "longitude": lon,
                 "current": "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,weathercode,cloudcover,windspeed_10m,winddirection_10m,pressure_msl",
-                "hourly": "temperature_2m,precipitation_probability,precipitation,rain,weathercode",
+                "hourly": "temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,rain,weathercode",
                 "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,rain_sum,weathercode,precipitation_probability_max",
                 "timezone": "auto",
                 "forecast_days": 7
@@ -128,26 +159,217 @@ async def fetch_open_meteo_weather(lat: float, lon: float):
         return None
 
 async def fetch_openaq_data(lat: float, lon: float, radius: int = 50000):
-    """Fetch air quality data from OpenAQ API"""
+    """Fetch air quality data using WAQI (World Air Quality Index) as primary source"""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # OpenAQ v3 API
-            url = "https://api.openaq.org/v3/locations"
-            params = {
-                "coordinates": f"{lat},{lon}",
-                "radius": radius,
-                "limit": 10,
-                "order_by": "distance"
-            }
-            headers = {
-                "Accept": "application/json"
-            }
-            response = await client.get(url, params=params, headers=headers)
-            response.raise_for_status()
-            return response.json()
+            # Use WAQI API as primary source (more reliable and global coverage)
+            logging.info(f"Fetching AQI data for lat={lat}, lon={lon}")
+            waqi_url = f"https://api.waqi.info/feed/geo:{lat};{lon}/"
+            # Use environment variable WAQI_API_KEY or default to "demo"
+            # Get your free API key at: https://aqicn.org/data-platform/token/
+            waqi_token = os.getenv("WAQI_API_KEY", "demo")
+            waqi_params = {"token": waqi_token}
+            waqi_response = await client.get(waqi_url, params=waqi_params)
+            
+            if waqi_response.status_code == 200:
+                waqi_data = waqi_response.json()
+                if waqi_data.get('status') == 'ok':
+                    # Convert WAQI format to our standard format
+                    waqi_aqi_data = waqi_data.get('data', {})
+                    iaqi = waqi_aqi_data.get('iaqi', {})
+                    
+                    # Build measurements array
+                    measurements = []
+                    if 'pm25' in iaqi:
+                        measurements.append({"parameter": "pm25", "value": iaqi['pm25'].get('v', 0)})
+                    if 'pm10' in iaqi:
+                        measurements.append({"parameter": "pm10", "value": iaqi['pm10'].get('v', 0)})
+                    if 'no2' in iaqi:
+                        measurements.append({"parameter": "no2", "value": iaqi['no2'].get('v', 0)})
+                    if 'so2' in iaqi:
+                        measurements.append({"parameter": "so2", "value": iaqi['so2'].get('v', 0)})
+                    if 'o3' in iaqi:
+                        measurements.append({"parameter": "o3", "value": iaqi['o3'].get('v', 0)})
+                    if 'co' in iaqi:
+                        measurements.append({"parameter": "co", "value": iaqi['co'].get('v', 0)})
+                    
+                    station_name = waqi_aqi_data.get('city', {}).get('name', 'WAQI Station')
+                    city_geo = waqi_aqi_data.get('city', {}).get('geo', [])
+                    aqi_value = waqi_aqi_data.get('aqi', 0)
+                    
+                    logging.info(f"WAQI API success for lat={lat}, lon={lon}: Station={station_name}, AQI={aqi_value}, Measurements={len(measurements)}, PM2.5={iaqi.get('pm25', {}).get('v', 'N/A')}")
+                    
+                    # Return in OpenAQ-like format
+                    data = {
+                        "results": [{
+                            "location": station_name,
+                            "coordinates": {
+                                "latitude": city_geo[0] if len(city_geo) > 0 else lat,
+                                "longitude": city_geo[1] if len(city_geo) > 1 else lon
+                            },
+                            "measurements": measurements,
+                            "aqi": aqi_value  # Include direct AQI value
+                        }]
+                    }
+            
+            results_count = len(data.get('results', []))
+            logging.info(f"AQI API response: {results_count} stations found for lat={lat}, lon={lon}")
+            
+            # If we have valid results, return them
+            if results_count > 0:
+                return data
+            
+            # If no results, try WAQI (World Air Quality Index) API as backup
+            logging.info("No OpenAQ stations found, trying WAQI API...")
+            waqi_url = f"https://api.waqi.info/feed/geo:{lat};{lon}/"
+            waqi_params = {"token": "demo"}  # Using demo token, can be replaced with real token
+            waqi_response = await client.get(waqi_url, params=waqi_params)
+            
+            if waqi_response.status_code == 200:
+                waqi_data = waqi_response.json()
+                if waqi_data.get('status') == 'ok':
+                    # Convert WAQI format to OpenAQ-like format
+                    waqi_aqi_data = waqi_data.get('data', {})
+                    iaqi = waqi_aqi_data.get('iaqi', {})
+                    
+                    # Build measurements array
+                    measurements = []
+                    if 'pm25' in iaqi:
+                        measurements.append({"parameter": "pm25", "value": iaqi['pm25'].get('v', 0)})
+                    if 'pm10' in iaqi:
+                        measurements.append({"parameter": "pm10", "value": iaqi['pm10'].get('v', 0)})
+                    if 'no2' in iaqi:
+                        measurements.append({"parameter": "no2", "value": iaqi['no2'].get('v', 0)})
+                    if 'so2' in iaqi:
+                        measurements.append({"parameter": "so2", "value": iaqi['so2'].get('v', 0)})
+                    if 'o3' in iaqi:
+                        measurements.append({"parameter": "o3", "value": iaqi['o3'].get('v', 0)})
+                    if 'co' in iaqi:
+                        measurements.append({"parameter": "co", "value": iaqi['co'].get('v', 0)})
+                    
+                    station_name = waqi_aqi_data.get('city', {}).get('name', 'WAQI Station')
+                    city_geo = waqi_aqi_data.get('city', {}).get('geo', [])
+                    
+                    logging.info(f"WAQI API success: {station_name} with {len(measurements)} measurements")
+                    
+                    return {
+                        "results": [{
+                            "location": station_name,
+                            "coordinates": {
+                                "latitude": city_geo[0] if len(city_geo) > 0 else lat,
+                                "longitude": city_geo[1] if len(city_geo) > 1 else lon
+                            },
+                            "measurements": measurements
+                        }]
+                    }
+            
+            logging.warning("Both OpenAQ and WAQI APIs returned no data")
+            return data  # Return empty OpenAQ response
+            
     except Exception as e:
-        logging.error(f"OpenAQ API error: {str(e)}")
+        logging.error(f"AQI API error: {str(e)}")
         return None
+
+async def get_location_from_ip(ip_address: str = None):
+    """Get location from IP address using ip-api.com (free, no key required)"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"http://ip-api.com/json/{ip_address}" if ip_address else "http://ip-api.com/json/"
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get('status') == 'success':
+                return {
+                    "lat": data.get('lat'),
+                    "lon": data.get('lon'),
+                    "city": data.get('city'),
+                    "region": data.get('regionName'),
+                    "country": data.get('country'),
+                    "display_name": f"{data.get('city')}, {data.get('regionName')}, {data.get('country')}",
+                    "timezone": data.get('timezone'),
+                    "zip": data.get('zip')
+                }
+    except Exception as e:
+        logging.error(f"IP geolocation error: {str(e)}")
+    return None
+
+async def generate_weather_insights(weather_data: dict, location: str):
+    """Generate AI-powered weather insights using Gemini"""
+    try:
+        current = weather_data.get('current', {})
+        
+        temp = current.get('temperature', 20)
+        feels_like = current.get('feels_like', temp)
+        condition = current.get('condition', 'Clear').lower()
+        humidity = current.get('humidity', 50)
+        wind = current.get('wind_speed', 10)
+        rain = current.get('rain', 0)
+        
+        # Generate structured response
+        intro = f"Weather update for {location}: It's currently {temp}°C with {condition} conditions."
+        if feels_like != temp:
+            intro += f" Feels like {feels_like}°C."
+        intro += f" Humidity is at {humidity}% with wind speeds of {wind} km/h."
+        
+        # Clothing advice
+        if temp < 15:
+            wear = "* 🧥: **What to Wear**: Bundle up! Wear warm layers, a jacket, and consider gloves."
+        elif temp < 20:
+            wear = "* 🧥: **What to Wear**: Light jacket or sweater recommended for comfort."
+        elif temp < 25:
+            wear = "* 🧥: **What to Wear**: Comfortable clothing. A light layer might be nice."
+        else:
+            wear = "* 🧥: **What to Wear**: Light, breathable clothing. Stay cool!"
+        
+        # Activity advice
+        if rain > 5:
+            activities = "* ☀️: **Activities**: Indoor activities recommended due to rain."
+        elif condition in ['clear', 'sunny']:
+            activities = "* ☀️: **Activities**: Perfect day for outdoor activities and walks!"
+        else:
+            activities = "* ☀️: **Activities**: Good day for outdoor activities with some cloud cover."
+        
+        # Rain/hydration advice
+        if rain > 5:
+            rain_advice = "* 💧: **Rain**: Carry an umbrella! Rain is expected today."
+        elif rain > 0:
+            rain_advice = "* 💧: **Rain**: Light rain possible. Umbrella might be handy."
+        else:
+            rain_advice = "* 💧: **Hydration**: No rain expected. Stay hydrated throughout the day!"
+        
+        # Comfort advice
+        if humidity > 70:
+            comfort = "* 🌡️: **Comfort**: High humidity may feel muggy. Stay in shade when possible."
+        elif humidity < 30:
+            comfort = "* 🌡️: **Comfort**: Low humidity. Keep skin moisturized and drink plenty of water."
+        else:
+            comfort = "* 🌡️: **Comfort**: Pleasant conditions overall. Enjoy your day!"
+        
+        return f"{intro}\n\n{wear}\n{activities}\n{rain_advice}\n{comfort}"
+
+    except Exception as e:
+        logging.error(f"Gemini weather insights error: {str(e)}")
+        temp = weather_data.get('current', {}).get('temperature', 0)
+        condition = weather_data.get('current', {}).get('condition', 'Clear')
+        return f"🌡️ Current temperature is {temp}°C with {condition.lower()} conditions. Have a great day!"
+
+async def reverse_geocode(lat: float, lon: float):
+    """Convert coordinates to readable location name"""
+    try:
+        location = geolocator.reverse(f"{lat}, {lon}", timeout=10, exactly_one=True)
+        if location:
+            return {
+                "lat": lat,
+                "lon": lon,
+                "display_name": location.address,
+                "city": location.raw.get('address', {}).get('city') or location.raw.get('address', {}).get('town'),
+                "state": location.raw.get('address', {}).get('state'),
+                "country": location.raw.get('address', {}).get('country')
+            }
+    except Exception as e:
+        logging.error(f"Reverse geocoding error: {str(e)}")
+    return {"lat": lat, "lon": lon, "display_name": f"{lat}, {lon}"}
 
 def get_weather_condition(weathercode: int) -> str:
     """Convert WMO weather code to readable condition"""
@@ -493,23 +715,90 @@ async def get_daily_forecast():
 
 # ==================== LOCATION-BASED WEATHER ENDPOINTS ====================
 
+@api_router.get("/weather/auto-detect")
+async def get_weather_auto_detect(request: Request):
+    """Auto-detect location and get weather data using IP geolocation with AI insights"""
+    client_ip = request.client.host if request.client else None
+    
+    # Skip localhost IPs
+    if client_ip and (client_ip.startswith('127.') or client_ip.startswith('192.168.') or client_ip == '::1'):
+        client_ip = None
+    
+    # Get location from IP
+    location_data = await get_location_from_ip(client_ip)
+    
+    if not location_data:
+        # Fallback to default location
+        location_data = {
+            "lat": 20.5937,
+            "lon": 78.9629,
+            "display_name": "India",
+            "city": "India"
+        }
+    
+    # Fetch weather data
+    weather_data = await fetch_open_meteo_weather(location_data["lat"], location_data["lon"])
+    
+    if not weather_data:
+        raise HTTPException(status_code=503, detail="Weather service temporarily unavailable")
+    
+    current = weather_data.get('current', {})
+    
+    # Get AI insights
+    ai_insights = await generate_weather_insights(
+        {"current": {
+            "temperature": int(current.get('temperature_2m', 0)),
+            "feels_like": int(current.get('apparent_temperature', 0)),
+            "condition": get_weather_condition(current.get('weathercode', 0)),
+            "humidity": int(current.get('relative_humidity_2m', 0)),
+            "wind_speed": int(current.get('windspeed_10m', 0)),
+            "rain": current.get('rain', 0)
+        }},
+        location_data.get("display_name", "your location")
+    )
+    
+    return {
+        "location": location_data,
+        "current": {
+            "temperature": int(current.get('temperature_2m', 0)),
+            "feels_like": int(current.get('apparent_temperature', 0)),
+            "condition": get_weather_condition(current.get('weathercode', 0)),
+            "humidity": int(current.get('relative_humidity_2m', 0)),
+            "wind_speed": int(current.get('windspeed_10m', 0)),
+            "rain": current.get('rain', 0),
+            "coordinates": {"lat": location_data["lat"], "lon": location_data["lon"]}
+        },
+        "ai_insights": ai_insights,
+        "detection_method": "ip" if client_ip else "default"
+    }
+
 @api_router.get("/weather/location")
 async def get_weather_by_location(
     q: Optional[str] = Query(None, description="City or location name"),
     lat: Optional[float] = Query(None, description="Latitude"),
-    lon: Optional[float] = Query(None, description="Longitude")
+    lon: Optional[float] = Query(None, description="Longitude"),
+    ai_insights: bool = Query(True, description="Include AI-powered weather insights")
 ):
-    """Get weather data for a specific location using Open-Meteo API"""
+    """Get weather data for a specific location with optional Gemini AI insights"""
     
     # Determine coordinates
     if lat is not None and lon is not None:
-        coordinates = {"lat": lat, "lon": lon, "display_name": f"{lat}, {lon}"}
+        # Reverse geocode to get location name
+        coordinates = await reverse_geocode(lat, lon)
     elif q:
         coordinates = await geocode_location(q)
         if not coordinates:
-            raise HTTPException(status_code=404, detail=f"Location '{q}' not found")
+            # Provide helpful error message with suggestions
+            suggestion = f"Try searching with full city name (e.g., 'Mumbai, India' or 'New York, USA')"
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Location '{q}' not found. {suggestion}"
+            )
     else:
-        raise HTTPException(status_code=400, detail="Either 'q' (location name) or 'lat' and 'lon' must be provided")
+        raise HTTPException(
+            status_code=400, 
+            detail="Either 'q' (location name) or 'lat' and 'lon' must be provided"
+        )
     
     # Fetch weather data from Open-Meteo
     weather_data = await fetch_open_meteo_weather(coordinates["lat"], coordinates["lon"])
@@ -532,8 +821,10 @@ async def get_weather_by_location(
     # Process current weather
     current_weather = {
         "location": coordinates.get("display_name", "Unknown"),
+        "name": coordinates.get("city") or coordinates.get("display_name", "Unknown"),
         "coordinates": {"lat": coordinates["lat"], "lon": coordinates["lon"]},
         "temperature": int(current.get('temperature_2m', 0)),
+        "apparent_temperature": int(current.get('apparent_temperature', 0)),
         "feels_like": int(current.get('apparent_temperature', 0)),
         "condition": get_weather_condition(current.get('weathercode', 0)),
         "humidity": int(current.get('relative_humidity_2m', 0)),
@@ -543,18 +834,29 @@ async def get_weather_by_location(
         "cloud_cover": int(current.get('cloudcover', 0)),
         "rain": current.get('rain', 0),
         "precipitation": current.get('precipitation', 0),
+        "weather_code": current.get('weathercode', 0),
         "last_updated": current.get('time', datetime.now(timezone.utc).isoformat())
     }
     
-    # Process hourly forecast (next 24 hours)
+    # Generate AI insights if requested
+    weather_insights = None
+    if ai_insights:
+        weather_insights = await generate_weather_insights(
+            {"current": current_weather, "daily": daily},
+            coordinates.get("display_name", "Unknown")
+        )
+    
+    # Process hourly forecast (next 48 hours to ensure 24-hour display coverage)
     hourly_forecast = []
     if hourly and 'time' in hourly:
-        for i in range(min(24, len(hourly['time']))):
+        for i in range(min(48, len(hourly['time']))):
             hour_time = hourly['time'][i] if i < len(hourly['time']) else None
             if hour_time:
                 hourly_forecast.append({
                     "time": hour_time,
                     "temp": int(hourly['temperature_2m'][i]) if i < len(hourly.get('temperature_2m', [])) else 0,
+                    "temperature": int(hourly['temperature_2m'][i]) if i < len(hourly.get('temperature_2m', [])) else 0,
+                    "humidity": int(hourly['relative_humidity_2m'][i]) if i < len(hourly.get('relative_humidity_2m', [])) else 0,
                     "condition": get_weather_condition(hourly['weathercode'][i]) if i < len(hourly.get('weathercode', [])) else "Unknown",
                     "rain": int(hourly['precipitation_probability'][i]) if i < len(hourly.get('precipitation_probability', [])) else 0,
                     "precipitation": hourly['precipitation'][i] if i < len(hourly.get('precipitation', [])) else 0
@@ -575,12 +877,24 @@ async def get_weather_by_location(
                     "precipitation": daily['precipitation_sum'][i] if i < len(daily.get('precipitation_sum', [])) else 0
                 })
     
-    return {
+    response_data = {
         "current": current_weather,
         "hourly": hourly_forecast,
         "daily": daily_forecast,
+        "location": {
+            "name": coordinates.get("display_name", "Unknown"),
+            "display_name": coordinates.get("display_name", "Unknown"),
+            "city": coordinates.get("city"),
+            "coordinates": {"lat": coordinates["lat"], "lon": coordinates["lon"]}
+        },
         "source": "open-meteo"
     }
+    
+    # Add AI insights if generated
+    if weather_insights:
+        response_data["ai_insights"] = weather_insights
+    
+    return response_data
 
 @api_router.get("/weather/rainfall-trends")
 async def get_rainfall_trends(
@@ -729,53 +1043,118 @@ async def get_aqi_by_location(
             return mock_data
         raise HTTPException(status_code=503, detail="AQI service temporarily unavailable")
     
-    # Process OpenAQ data
+    # Process WAQI data
     stations = []
     all_measurements = {}
+    direct_aqi = None  # Will store the main AQI value from the first result
     
     for location in aqi_data.get('results', [])[:10]:
-        station_name = location.get('name', 'Unknown Station')
+        station_name = location.get('location', 'Unknown Station')
         station_coords = location.get('coordinates', {})
         
-        # Get latest measurements
-        if 'measurements' in location or 'parameters' in location:
-            measurements = location.get('measurements', []) or location.get('parameters', [])
-            
+        # Get direct AQI value from WAQI for this specific station
+        station_direct_aqi = location.get('aqi', 0) if 'aqi' in location and location['aqi'] > 0 else None
+        
+        # Store the first valid AQI as the overall AQI
+        if direct_aqi is None and station_direct_aqi:
+            direct_aqi = station_direct_aqi
+        
+        # Get measurements
+        measurements = location.get('measurements', [])
+        
+        if measurements:
             station_pollutants = {}
             for measurement in measurements:
-                parameter = measurement.get('parameter', '')
-                value = measurement.get('value') or measurement.get('lastValue', 0)
+                parameter = measurement.get('parameter', '').lower()
+                value = measurement.get('value', 0)
                 
-                if parameter in ['pm25', 'pm2.5', 'pm10', 'no2', 'so2', 'co', 'o3']:
-                    param_key = parameter.replace('.', '')
-                    station_pollutants[param_key] = value
-                    
-                    # Aggregate for overall location
-                    if param_key not in all_measurements:
-                        all_measurements[param_key] = []
-                    all_measurements[param_key].append(value)
+                # Map parameter names
+                if parameter in ['pm25', 'pm2.5']:
+                    station_pollutants['pm25'] = value
+                    if 'pm25' not in all_measurements:
+                        all_measurements['pm25'] = []
+                    all_measurements['pm25'].append(value)
+                elif parameter == 'pm10':
+                    station_pollutants['pm10'] = value
+                    if 'pm10' not in all_measurements:
+                        all_measurements['pm10'] = []
+                    all_measurements['pm10'].append(value)
+                elif parameter in ['no2', 'so2', 'co', 'o3']:
+                    station_pollutants[parameter] = value
+                    if parameter not in all_measurements:
+                        all_measurements[parameter] = []
+                    all_measurements[parameter].append(value)
             
-            # Calculate station AQI
-            if 'pm25' in station_pollutants or 'pm2.5' in station_pollutants:
-                pm25_value = station_pollutants.get('pm25', station_pollutants.get('pm2.5', 0))
-                aqi_info = calculate_aqi_from_pollutants({"pm25": pm25_value})
+            # Use station's direct AQI if available, otherwise calculate from PM2.5
+            if station_direct_aqi:
+                station_aqi = station_direct_aqi
+                # Determine category based on AQI value
+                if station_aqi <= 50:
+                    category = "Good"
+                elif station_aqi <= 100:
+                    category = "Moderate"
+                elif station_aqi <= 150:
+                    category = "Unhealthy for Sensitive Groups"
+                elif station_aqi <= 200:
+                    category = "Unhealthy"
+                elif station_aqi <= 300:
+                    category = "Very Unhealthy"
+                else:
+                    category = "Hazardous"
+            elif 'pm25' in station_pollutants:
+                aqi_info = calculate_aqi_from_pollutants({"pm25": station_pollutants['pm25']})
+                station_aqi = aqi_info['aqi']
+                category = aqi_info['category']
+            else:
+                continue
                 
-                stations.append({
-                    "name": station_name,
-                    "aqi": aqi_info['aqi'],
-                    "category": aqi_info['category'],
-                    "lat": station_coords.get('latitude'),
-                    "lon": station_coords.get('longitude'),
-                    "pollutants": station_pollutants
-                })
+            stations.append({
+                "name": station_name,
+                "aqi": station_aqi,
+                "category": category,
+                "lat": station_coords.get('latitude'),
+                "lon": station_coords.get('longitude'),
+                "pollutants": station_pollutants,
+                "last_updated": datetime.now(timezone.utc).isoformat()
+            })
     
-    # Calculate overall AQI from average
+    # Calculate overall pollutants first
     overall_pollutants = {}
     for param, values in all_measurements.items():
         if values:
             overall_pollutants[param] = sum(values) / len(values)
     
-    overall_aqi_info = calculate_aqi_from_pollutants(overall_pollutants)
+    # Use direct AQI if available, otherwise calculate from measurements
+    if direct_aqi:
+        overall_aqi = direct_aqi
+        # Determine category
+        if overall_aqi <= 50:
+            category = "Good"
+            color = "#10b981"
+        elif overall_aqi <= 100:
+            category = "Moderate"
+            color = "#f59e0b"
+        elif overall_aqi <= 150:
+            category = "Unhealthy for Sensitive Groups"
+            color = "#f97316"
+        elif overall_aqi <= 200:
+            category = "Unhealthy"
+            color = "#ef4444"
+        elif overall_aqi <= 300:
+            category = "Very Unhealthy"
+            color = "#a855f7"
+        else:
+            category = "Hazardous"
+            color = "#7c2d12"
+        
+        overall_aqi_info = {
+            'aqi': int(overall_aqi),
+            'category': category,
+            'color': color
+        }
+    else:
+        # Calculate from measurements
+        overall_aqi_info = calculate_aqi_from_pollutants(overall_pollutants)
     
     return {
         "current": {
@@ -809,26 +1188,27 @@ async def get_realtime_aqi_stations(
     
     stations = []
     for location in aqi_data.get('results', [])[:20]:
-        station_name = location.get('name', 'Unknown Station')
+        station_name = location.get('location', 'Unknown Station')
         station_coords = location.get('coordinates', {})
         
-        # Get measurements
-        if 'measurements' in location or 'parameters' in location:
-            measurements = location.get('measurements', []) or location.get('parameters', [])
-            
+        # Get measurements from v2 API format
+        measurements = location.get('measurements', [])
+        
+        if measurements:
             station_pollutants = {}
             for measurement in measurements:
-                parameter = measurement.get('parameter', '')
-                value = measurement.get('value') or measurement.get('lastValue', 0)
+                parameter = measurement.get('parameter', '').lower()
+                value = measurement.get('value', 0)
                 
-                if parameter in ['pm25', 'pm2.5', 'pm10', 'no2', 'so2', 'co', 'o3']:
-                    param_key = parameter.replace('.', '')
-                    station_pollutants[param_key] = value
+                # Map parameter names
+                if parameter in ['pm25', 'pm2.5']:
+                    station_pollutants['pm25'] = value
+                elif parameter in ['pm10', 'no2', 'so2', 'co', 'o3']:
+                    station_pollutants[parameter] = value
             
             # Calculate station AQI
-            if 'pm25' in station_pollutants or 'pm2.5' in station_pollutants:
-                pm25_value = station_pollutants.get('pm25', station_pollutants.get('pm2.5', 0))
-                aqi_info = calculate_aqi_from_pollutants({"pm25": pm25_value})
+            if 'pm25' in station_pollutants:
+                aqi_info = calculate_aqi_from_pollutants({"pm25": station_pollutants['pm25']})
                 
                 stations.append({
                     "name": station_name,
@@ -1204,12 +1584,14 @@ async def chatbot_message(request: ChatbotMessageRequest):
                 conversation_history += f"Assistant: {msg.get('response', '')}\n"
         
         # Build context info
-        context_info = f"""
-Current Situation in India:
-- Weather: {disaster_context.get('current_weather', {}).get('temperature', 'N/A')}°C, {disaster_context.get('current_weather', {}).get('condition', 'N/A')}
-- Air Quality Index: {disaster_context.get('air_quality', {}).get('aqi', 'N/A')} ({disaster_context.get('air_quality', {}).get('category', 'N/A')})
-- Active Alerts: {disaster_context.get('alert_count', 0)} alerts
-"""
+        context_info = (
+            "Current Situation in India:\n"
+            f"- Weather: {disaster_context.get('current_weather', {}).get('temperature', 'N/A')}°C, "
+            f"{disaster_context.get('current_weather', {}).get('condition', 'N/A')}\n"
+            f"- Air Quality Index: {disaster_context.get('air_quality', {}).get('aqi', 'N/A')} "
+            f"({disaster_context.get('air_quality', {}).get('category', 'N/A')})\n"
+            f"- Active Alerts: {disaster_context.get('alert_count', 0)} alerts\n"
+        )
         
         if disaster_context.get('active_alerts'):
             context_info += "\nHigh Priority Alerts:\n"
@@ -1217,22 +1599,21 @@ Current Situation in India:
                 context_info += f"- {alert.get('type', 'Alert')}: {alert.get('title', 'Unknown')} ({alert.get('severity', 'unknown')} level)\n"
         
         # Enhanced prompt with conversation history
-        prompt = f"""You are Suraksha Setu, an intelligent and friendly AI assistant specializing in disaster management, emergency response, and safety in India.
-
-{context_info}
-{conversation_history}
-
-User: {request.message}
-
-Guidelines:
-- Answer ALL questions naturally, clearly, and comprehensively
-- For disaster/safety topics: Provide detailed, actionable advice with immediate safety steps
-- Use simple language that anyone can understand
-- Format lists with bullet points (-), use **bold** for critical warnings
-- Keep responses conversational, 2-4 paragraphs unless more detail needed
-- Be warm, supportive, and empathetic
-- Reference current weather/alerts when relevant to the question
-- For greetings: Respond warmly and offer assistance
+        prompt = (
+            "You are Suraksha Setu, an intelligent and friendly AI assistant specializing in disaster management, emergency response, and safety in India.\n\n"
+            f"{context_info}"
+            f"{conversation_history}\n\n"
+            f"User: {request.message}\n\n"
+            "Guidelines:\n"
+            "- Answer ALL questions naturally, clearly, and comprehensively\n"
+            "- For disaster/safety topics: Provide detailed, actionable advice with immediate safety steps\n"
+            "- Use simple language that anyone can understand\n"
+            "- Format lists with bullet points (-), use **bold** for critical warnings\n"
+            "- Keep responses conversational, 2-4 paragraphs unless more detail needed\n"
+            "- Be warm, supportive, and empathetic\n"
+            "- Reference current weather/alerts when relevant to the question\n"
+            "- For greetings: Respond warmly and offer assistance"
+        )
 
         response = gemini_model.generate_content(prompt)
         response_text = response.text if hasattr(response, 'text') else str(response)
@@ -1262,20 +1643,17 @@ Guidelines:
         error_msg = str(e)
         if "429" in error_msg or "quota" in error_msg.lower() or "rate limit" in error_msg.lower():
             # Return a helpful response for rate limit errors
-            fallback_response = """I apologize, but I'm currently experiencing high demand and have reached my temporary usage limit. 
-
-**What you can do:**
-- **Try again in a minute** - My quota resets quickly
-- **Use the emergency resources** - Check the alerts and weather sections for real-time information
-- **Call emergency services** - For urgent help, dial 112 (India)
-
-**Common Safety Tips:**
-- During earthquakes: Drop, Cover, Hold On
-- During floods: Move to higher ground immediately
-- During cyclones: Stay indoors, away from windows
-- For air quality issues: Stay indoors, use masks if necessary
-
-I'll be back online shortly. Thank you for your patience! 🙏"""
+            fallback_response = ("I apologize, but I'm currently experiencing high demand and have reached my temporary usage limit.\n\n"
+                "**What you can do:**\n"
+                "- **Try again in a minute** - My quota resets quickly\n"
+                "- **Use the emergency resources** - Check the alerts and weather sections for real-time information\n"
+                "- **Call emergency services** - For urgent help, dial 112 (India)\n\n"
+                "**Common Safety Tips:**\n"
+                "- During earthquakes: Drop, Cover, Hold On\n"
+                "- During floods: Move to higher ground immediately\n"
+                "- During cyclones: Stay indoors, away from windows\n"
+                "- For air quality issues: Stay indoors, use masks if necessary\n\n"
+                "I'll be back online shortly. Thank you for your patience!")
             
             # Create fallback chat message
             chat_message = ChatMessage(
