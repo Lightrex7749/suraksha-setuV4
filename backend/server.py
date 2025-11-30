@@ -159,112 +159,81 @@ async def fetch_open_meteo_weather(lat: float, lon: float):
         return None
 
 async def fetch_openaq_data(lat: float, lon: float, radius: int = 50000):
-    """Fetch air quality data using WAQI (World Air Quality Index) as primary source"""
+    """Fetch air quality data using OpenWeather Air Pollution API"""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Use WAQI API as primary source (more reliable and global coverage)
-            logging.info(f"Fetching AQI data for lat={lat}, lon={lon}")
-            waqi_url = f"https://api.waqi.info/feed/geo:{lat};{lon}/"
-            # Use environment variable WAQI_API_KEY or default to "demo"
-            # Get your free API key at: https://aqicn.org/data-platform/token/
-            waqi_token = os.getenv("WAQI_API_KEY", "demo")
-            waqi_params = {"token": waqi_token}
-            waqi_response = await client.get(waqi_url, params=waqi_params)
+            # Use OpenWeather Air Pollution API
+            # Get your free API key at: https://openweathermap.org/api
+            openweather_key = os.getenv("OPENWEATHER_API_KEY", "")
             
-            if waqi_response.status_code == 200:
-                waqi_data = waqi_response.json()
-                if waqi_data.get('status') == 'ok':
-                    # Convert WAQI format to our standard format
-                    waqi_aqi_data = waqi_data.get('data', {})
-                    iaqi = waqi_aqi_data.get('iaqi', {})
+            if not openweather_key:
+                logging.warning("OPENWEATHER_API_KEY not set, using mock data")
+                return None
+            
+            logging.info(f"Fetching AQI data from OpenWeather for lat={lat}, lon={lon}")
+            
+            # OpenWeather Air Pollution API endpoint
+            air_pollution_url = "http://api.openweathermap.org/data/2.5/air_pollution"
+            params = {
+                "lat": lat,
+                "lon": lon,
+                "appid": openweather_key
+            }
+            
+            response = await client.get(air_pollution_url, params=params)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                if 'list' in data and len(data['list']) > 0:
+                    air_data = data['list'][0]
+                    aqi = air_data.get('main', {}).get('aqi', 0)
+                    components = air_data.get('components', {})
                     
-                    # Build measurements array
-                    measurements = []
-                    if 'pm25' in iaqi:
-                        measurements.append({"parameter": "pm25", "value": iaqi['pm25'].get('v', 0)})
-                    if 'pm10' in iaqi:
-                        measurements.append({"parameter": "pm10", "value": iaqi['pm10'].get('v', 0)})
-                    if 'no2' in iaqi:
-                        measurements.append({"parameter": "no2", "value": iaqi['no2'].get('v', 0)})
-                    if 'so2' in iaqi:
-                        measurements.append({"parameter": "so2", "value": iaqi['so2'].get('v', 0)})
-                    if 'o3' in iaqi:
-                        measurements.append({"parameter": "o3", "value": iaqi['o3'].get('v', 0)})
-                    if 'co' in iaqi:
-                        measurements.append({"parameter": "co", "value": iaqi['co'].get('v', 0)})
-                    
-                    station_name = waqi_aqi_data.get('city', {}).get('name', 'WAQI Station')
-                    city_geo = waqi_aqi_data.get('city', {}).get('geo', [])
-                    aqi_value = waqi_aqi_data.get('aqi', 0)
-                    
-                    logging.info(f"WAQI API success for lat={lat}, lon={lon}: Station={station_name}, AQI={aqi_value}, Measurements={len(measurements)}, PM2.5={iaqi.get('pm25', {}).get('v', 'N/A')}")
-                    
-                    # Return in OpenAQ-like format
-                    data = {
-                        "results": [{
-                            "location": station_name,
-                            "coordinates": {
-                                "latitude": city_geo[0] if len(city_geo) > 0 else lat,
-                                "longitude": city_geo[1] if len(city_geo) > 1 else lon
-                            },
-                            "measurements": measurements,
-                            "aqi": aqi_value  # Include direct AQI value
-                        }]
+                    # OpenWeather AQI scale: 1=Good, 2=Fair, 3=Moderate, 4=Poor, 5=Very Poor
+                    # Convert to US AQI scale (0-500)
+                    aqi_mapping = {
+                        1: 50,   # Good (0-50)
+                        2: 100,  # Fair (51-100)
+                        3: 150,  # Moderate (101-150)
+                        4: 200,  # Poor (151-200)
+                        5: 300   # Very Poor (201-300)
                     }
-            
-            results_count = len(data.get('results', []))
-            logging.info(f"AQI API response: {results_count} stations found for lat={lat}, lon={lon}")
-            
-            # If we have valid results, return them
-            if results_count > 0:
-                return data
-            
-            # If no results, try WAQI (World Air Quality Index) API as backup
-            logging.info("No OpenAQ stations found, trying WAQI API...")
-            waqi_url = f"https://api.waqi.info/feed/geo:{lat};{lon}/"
-            waqi_params = {"token": "demo"}  # Using demo token, can be replaced with real token
-            waqi_response = await client.get(waqi_url, params=waqi_params)
-            
-            if waqi_response.status_code == 200:
-                waqi_data = waqi_response.json()
-                if waqi_data.get('status') == 'ok':
-                    # Convert WAQI format to OpenAQ-like format
-                    waqi_aqi_data = waqi_data.get('data', {})
-                    iaqi = waqi_aqi_data.get('iaqi', {})
+                    us_aqi = aqi_mapping.get(aqi, 100)
                     
-                    # Build measurements array
+                    # Build measurements array from components
                     measurements = []
-                    if 'pm25' in iaqi:
-                        measurements.append({"parameter": "pm25", "value": iaqi['pm25'].get('v', 0)})
-                    if 'pm10' in iaqi:
-                        measurements.append({"parameter": "pm10", "value": iaqi['pm10'].get('v', 0)})
-                    if 'no2' in iaqi:
-                        measurements.append({"parameter": "no2", "value": iaqi['no2'].get('v', 0)})
-                    if 'so2' in iaqi:
-                        measurements.append({"parameter": "so2", "value": iaqi['so2'].get('v', 0)})
-                    if 'o3' in iaqi:
-                        measurements.append({"parameter": "o3", "value": iaqi['o3'].get('v', 0)})
-                    if 'co' in iaqi:
-                        measurements.append({"parameter": "co", "value": iaqi['co'].get('v', 0)})
+                    if 'pm2_5' in components:
+                        measurements.append({"parameter": "pm25", "value": components['pm2_5']})
+                    if 'pm10' in components:
+                        measurements.append({"parameter": "pm10", "value": components['pm10']})
+                    if 'no2' in components:
+                        measurements.append({"parameter": "no2", "value": components['no2']})
+                    if 'so2' in components:
+                        measurements.append({"parameter": "so2", "value": components['so2']})
+                    if 'o3' in components:
+                        measurements.append({"parameter": "o3", "value": components['o3']})
+                    if 'co' in components:
+                        measurements.append({"parameter": "co", "value": components['co']})
                     
-                    station_name = waqi_aqi_data.get('city', {}).get('name', 'WAQI Station')
-                    city_geo = waqi_aqi_data.get('city', {}).get('geo', [])
+                    logging.info(f"OpenWeather API success for lat={lat}, lon={lon}: AQI={us_aqi}, PM2.5={components.get('pm2_5', 'N/A')}, Measurements={len(measurements)}")
                     
-                    logging.info(f"WAQI API success: {station_name} with {len(measurements)} measurements")
-                    
+                    # Return in standard format
                     return {
                         "results": [{
-                            "location": station_name,
+                            "location": f"Location ({lat:.2f}, {lon:.2f})",
                             "coordinates": {
-                                "latitude": city_geo[0] if len(city_geo) > 0 else lat,
-                                "longitude": city_geo[1] if len(city_geo) > 1 else lon
+                                "latitude": lat,
+                                "longitude": lon
                             },
-                            "measurements": measurements
+                            "measurements": measurements,
+                            "aqi": us_aqi,
+                            "raw_aqi": aqi  # Store original OpenWeather AQI (1-5)
                         }]
                     }
             
-            logging.warning("Both OpenAQ and WAQI APIs returned no data")
-            return data  # Return empty OpenAQ response
+            logging.warning(f"OpenWeather API returned status {response.status_code}")
+            return None
             
     except Exception as e:
         logging.error(f"AQI API error: {str(e)}")
