@@ -23,6 +23,7 @@ const ChatBot = () => {
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
+  const [filteredSuggestions, setFilteredSuggestions] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const scrollViewportRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -98,10 +99,58 @@ const ChatBot = () => {
   const loadSuggestions = async () => {
     try {
       const response = await axios.get(`${BACKEND_URL}/api/chatbot/suggestions`);
-      setSuggestions(response.data.suggestions || []);
+      const allSuggestions = response.data.suggestions || [];
+      setSuggestions(allSuggestions);
+      setFilteredSuggestions(allSuggestions.slice(0, 3));
     } catch (error) {
       console.error('Error loading suggestions:', error);
     }
+  };
+
+  // Filter suggestions based on user input
+  useEffect(() => {
+    if (!input.trim()) {
+      setFilteredSuggestions(suggestions.slice(0, 3));
+      return;
+    }
+
+    const inputLower = input.toLowerCase();
+    const filtered = suggestions.filter(suggestion => 
+      suggestion.toLowerCase().includes(inputLower) ||
+      inputLower.split(' ').some(word => word.length > 2 && suggestion.toLowerCase().includes(word))
+    );
+
+    // If no matches, show smart suggestions based on keywords
+    if (filtered.length === 0) {
+      const smartSuggestions = getSmartSuggestions(inputLower);
+      setFilteredSuggestions(smartSuggestions);
+    } else {
+      setFilteredSuggestions(filtered.slice(0, 3));
+    }
+  }, [input, suggestions]);
+
+  // Get smart suggestions based on keywords
+  const getSmartSuggestions = (inputLower) => {
+    const keywords = {
+      earthquake: ['What should I do during an earthquake?', 'Earthquake safety tips', 'How to prepare for earthquakes?'],
+      flood: ['What to do during a flood?', 'Flood safety measures', 'How to stay safe in floods?'],
+      cyclone: ['Cyclone safety tips', 'What to do during a cyclone?', 'Cyclone preparation checklist'],
+      weather: ['What is the weather forecast?', 'Current weather conditions', 'Weather alerts in my area'],
+      air: ['Current air quality index', 'Is the air quality safe?', 'Air pollution levels'],
+      alert: ['Active disaster alerts', 'Emergency notifications', 'What disasters are happening?'],
+      evacuation: ['Nearest evacuation centers', 'Evacuation routes', 'Where should I evacuate?'],
+      emergency: ['Emergency contact numbers', 'What to do in an emergency?', 'Emergency preparedness kit'],
+      safety: ['Disaster safety tips', 'How to stay safe?', 'Safety guidelines'],
+      prepare: ['How to prepare for disasters?', 'Emergency preparedness checklist', 'Disaster preparation tips']
+    };
+
+    for (const [key, suggestionList] of Object.entries(keywords)) {
+      if (inputLower.includes(key)) {
+        return suggestionList;
+      }
+    }
+
+    return suggestions.slice(0, 3);
   };
 
   const sendMessage = async (messageText = null) => {
@@ -352,22 +401,35 @@ const ChatBot = () => {
                 )}
               </ScrollArea>
 
-              {/* Quick Actions */}
-              {!loading && messages.length > 0 && suggestions.length > 0 && (
-                <div className="px-4 pb-2 border-t pt-2">
+              {/* Quick Actions - Dynamic Suggestions */}
+              {!loading && filteredSuggestions.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="px-4 pb-2 border-t pt-2 bg-muted/30"
+                >
+                  <p className="text-[10px] text-muted-foreground mb-1.5 px-1">
+                    {input.trim() ? '💡 Related suggestions:' : '🚀 Quick actions:'}
+                  </p>
                   <div className="flex gap-2 overflow-x-auto pb-1">
-                    {suggestions.slice(0, 3).map((suggestion, idx) => (
-                      <Badge
+                    {filteredSuggestions.map((suggestion, idx) => (
+                      <motion.div
                         key={idx}
-                        variant="secondary"
-                        className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors whitespace-nowrap text-xs"
-                        onClick={() => handleSuggestionClick(suggestion)}
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ delay: idx * 0.05 }}
                       >
-                        {suggestion.length > 30 ? suggestion.substring(0, 30) + '...' : suggestion}
-                      </Badge>
+                        <Badge
+                          variant="secondary"
+                          className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-all hover:scale-105 whitespace-nowrap text-xs"
+                          onClick={() => handleSuggestionClick(suggestion)}
+                        >
+                          {suggestion.length > 35 ? suggestion.substring(0, 35) + '...' : suggestion}
+                        </Badge>
+                      </motion.div>
                     ))}
                   </div>
-                </div>
+                </motion.div>
               )}
 
               {/* Input */}
