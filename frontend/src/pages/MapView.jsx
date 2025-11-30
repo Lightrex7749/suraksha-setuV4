@@ -44,6 +44,7 @@ const MapView = () => {
   // Layer visibility controls
   const [showLayers, setShowLayers] = useState({
     aqi: true,
+    aqiHeatMap: false, // New: AQI heat map overlay
     rainfall: true,
     cyclone: true,
   });
@@ -261,6 +262,17 @@ const MapView = () => {
                 <Switch 
                   checked={showLayers.aqi}
                   onCheckedChange={(checked) => setShowLayers(prev => ({ ...prev, aqi: checked }))}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-purple-500" />
+                  <Label className="text-sm">AQI Heat Map</Label>
+                  <Badge variant="secondary" className="text-[10px] px-1">NEW</Badge>
+                </div>
+                <Switch 
+                  checked={showLayers.aqiHeatMap}
+                  onCheckedChange={(checked) => setShowLayers(prev => ({ ...prev, aqiHeatMap: checked }))}
                 />
               </div>
               <div className="flex items-center justify-between">

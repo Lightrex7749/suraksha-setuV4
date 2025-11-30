@@ -1,7 +1,70 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+
+// AQI Heat Map Layer Component
+function AQIHeatMap({ stations }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!stations || stations.length === 0) return;
+
+    // Create canvas overlay for heat map effect
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    const bounds = map.getBounds();
+    const size = map.getSize();
+    canvas.width = size.x;
+    canvas.height = size.y;
+    canvas.style.position = 'absolute';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+    canvas.style.pointerEvents = 'none';
+    canvas.style.zIndex = '400';
+    
+    // Draw heat circles for each station
+    stations.forEach(station => {
+      if (!station.lat || !station.lon) return;
+      
+      const point = map.latLngToContainerPoint([station.lat, station.lon]);
+      const aqi = station.aqi || 0;
+      
+      // Determine color based on AQI
+      let color;
+      if (aqi <= 50) color = 'rgba(0, 228, 0, 0.4)';
+      else if (aqi <= 100) color = 'rgba(255, 255, 0, 0.4)';
+      else if (aqi <= 150) color = 'rgba(255, 126, 0, 0.4)';
+      else if (aqi <= 200) color = 'rgba(255, 0, 0, 0.4)';
+      else if (aqi <= 300) color = 'rgba(143, 63, 151, 0.4)';
+      else color = 'rgba(126, 0, 35, 0.4)';
+      
+      // Draw gradient circle
+      const gradient = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, 50);
+      gradient.addColorStop(0, color);
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 50, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    
+    // Add canvas to map pane
+    const mapPane = map.getPane('overlayPane');
+    mapPane.appendChild(canvas);
+    
+    // Cleanup on unmount or stations change
+    return () => {
+      if (mapPane.contains(canvas)) {
+        mapPane.removeChild(canvas);
+      }
+    };
+  }, [stations, map]);
+
+  return null;
+}
 
 // Fix Leaflet default marker icon issue
 delete L.Icon.Default.prototype._getIconUrl;
@@ -89,6 +152,11 @@ const Map2D = ({ center, aqiStations, cycloneTrack, rainfallData, showLayers }) 
             </div>
           </Popup>
         </Marker>
+      )}
+
+      {/* AQI Heat Map Overlay */}
+      {showLayers?.aqiHeatMap && aqiStations && aqiStations.length > 0 && (
+        <AQIHeatMap stations={aqiStations} />
       )}
 
       {/* AQI Station Markers */}
