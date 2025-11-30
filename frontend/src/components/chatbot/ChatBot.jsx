@@ -129,25 +129,71 @@ const ChatBot = () => {
     }
   }, [input, suggestions]);
 
-  // Get smart suggestions based on keywords
+  // Get smart suggestions based on keywords - Comprehensive matching
   const getSmartSuggestions = (inputLower) => {
     const keywords = {
-      earthquake: ['What should I do during an earthquake?', 'Earthquake safety tips', 'How to prepare for earthquakes?'],
-      flood: ['What to do during a flood?', 'Flood safety measures', 'How to stay safe in floods?'],
-      cyclone: ['Cyclone safety tips', 'What to do during a cyclone?', 'Cyclone preparation checklist'],
-      weather: ['What is the weather forecast?', 'Current weather conditions', 'Weather alerts in my area'],
-      air: ['Current air quality index', 'Is the air quality safe?', 'Air pollution levels'],
-      alert: ['Active disaster alerts', 'Emergency notifications', 'What disasters are happening?'],
-      evacuation: ['Nearest evacuation centers', 'Evacuation routes', 'Where should I evacuate?'],
-      emergency: ['Emergency contact numbers', 'What to do in an emergency?', 'Emergency preparedness kit'],
-      safety: ['Disaster safety tips', 'How to stay safe?', 'Safety guidelines'],
-      prepare: ['How to prepare for disasters?', 'Emergency preparedness checklist', 'Disaster preparation tips']
+      // Earthquake
+      'earth': ['What to do during earthquake?', 'Earthquake safety tips', 'Prepare for earthquakes'],
+      'quake': ['Survive an earthquake', 'Earthquake preparedness', 'After earthquake safety'],
+      // Flood  
+      'flood': ['Flood safety measures', 'Stay safe in floods', 'Flood preparedness'],
+      'rain': ['Heavy rainfall alerts', 'Monsoon safety', 'Flooding prevention'],
+      'water': ['Water disaster safety', 'Waterlogging tips', 'Flood escape'],
+      // Cyclone/Storm
+      'cyclo': ['Cyclone safety tips', 'During cyclone actions', 'Cyclone preparation'],
+      'storm': ['Storm safety', 'Prepare for storms', 'Storm warnings'],
+      'wind': ['High wind safety', 'Storm damage prevention', 'Wind protection'],
+      // Weather
+      'weather': ['Current weather', 'Weather forecast', 'Weather alerts'],
+      'forecast': ['Today weather', 'Weekly forecast', 'Weather predictions'],
+      'temp': ['Temperature forecast', 'Heat wave safety', 'Cold weather tips'],
+      // Air Quality
+      'air': ['Air quality index', 'Is air safe?', 'Air pollution levels'],
+      'aqi': ['Check AQI', 'Air quality today', 'What is AQI?'],
+      'pollut': ['Air pollution effects', 'Protect from pollution', 'Pollution safety'],
+      // Alerts
+      'alert': ['Active alerts', 'Disaster warnings', 'Emergency notifications'],
+      'warn': ['Disaster warnings', 'Alert notifications', 'Active warnings'],
+      // Evacuation
+      'evacu': ['Evacuation centers', 'Evacuation routes', 'How to evacuate'],
+      'shelter': ['Emergency shelters', 'Find shelter', 'Shelter locations'],
+      // Emergency
+      'emerg': ['Emergency contacts', 'What to do emergency', 'Emergency kit'],
+      'help': ['Get help', 'Emergency services', 'Helpline numbers'],
+      'sos': ['Emergency SOS', 'Urgent help', 'Emergency response'],
+      // Safety
+      'safe': ['Safety tips', 'Stay safe', 'Safety guidelines'],
+      'protect': ['Protect yourself', 'Safety measures', 'Protection tips'],
+      // Preparation
+      'prepar': ['Prepare for disasters', 'Preparedness checklist', 'Disaster preparation'],
+      'ready': ['Be disaster ready', 'Prepare emergency', 'Readiness guide'],
+      'kit': ['Emergency kit', 'Disaster kit items', 'Preparedness supplies'],
+      // Fire
+      'fire': ['Fire safety', 'During fire actions', 'Fire escape'],
+      'burn': ['Fire prevention', 'Burn safety', 'Fire emergency'],
+      // Tsunami
+      'tsuna': ['Tsunami safety', 'Tsunami warnings', 'Coastal safety'],
+      // Landslide
+      'land': ['Landslide safety', 'Landslide causes', 'Mountain safety'],
+      'slide': ['Prevent landslides', 'Slope safety', 'Hillside precautions'],
+      // Question words
+      'what': ['What is disaster management?', 'What disasters occur?', 'What to prepare?'],
+      'how': ['How to stay safe?', 'How to prepare?', 'How to respond?'],
+      'when': ['When to evacuate?', 'When disasters occur?', 'When seek help?'],
+      'where': ['Where find shelter?', 'Where safe zones?', 'Where get help?']
     };
 
+    // Match with partial keywords (first 3-4 chars)
     for (const [key, suggestionList] of Object.entries(keywords)) {
-      if (inputLower.includes(key)) {
+      const searchTerm = inputLower.length >= 3 ? inputLower.substring(0, Math.min(5, inputLower.length)) : inputLower;
+      if (inputLower.includes(key) || key.includes(searchTerm)) {
         return suggestionList;
       }
+    }
+
+    // Default contextual suggestions
+    if (inputLower.length < 3) {
+      return ['Prepare for disasters', 'Emergency safety tips', 'Current weather alerts'];
     }
 
     return suggestions.slice(0, 3);
