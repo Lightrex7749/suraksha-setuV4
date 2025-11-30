@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
 
 const ChatMessage = ({ message }) => {
-  const isUser = message.message && !message.response;
+  const isUser = message.isUser === true;
   const hasError = message.error;
 
   const formatTimestamp = (timestamp) => {

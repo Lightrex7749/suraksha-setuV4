@@ -7,7 +7,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001/api';
+
+// Debug logging
+console.log('Chatbot - REACT_APP_BACKEND_URL:', process.env.REACT_APP_BACKEND_URL);
+console.log('Chatbot - API_URL:', API_URL);
 
 const Chatbot = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -56,7 +60,7 @@ const Chatbot = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/ai-assistant`, {
+      const response = await fetch(`${API_URL}/ai-assistant`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

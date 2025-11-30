@@ -10,7 +10,11 @@ import axios from 'axios';
 import ChatMessage from './ChatMessage';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+
+// Debug logging
+console.log('ChatBot - REACT_APP_BACKEND_URL:', process.env.REACT_APP_BACKEND_URL);
+console.log('ChatBot - BACKEND_URL:', BACKEND_URL);
 
 const ChatBot = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -19,7 +23,10 @@ const ChatBot = () => {
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
-  const scrollRef = useRef(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const scrollViewportRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
   const { user } = useAuth();
 
   // Generate session ID on mount
@@ -44,19 +51,36 @@ const ChatBot = () => {
     }
   }, []);
 
-  // Load suggestions
+  // Load suggestions and focus input when opened
   useEffect(() => {
-    if (isOpen && suggestions.length === 0) {
-      loadSuggestions();
+    if (isOpen) {
+      if (suggestions.length === 0) {
+        loadSuggestions();
+      }
+      // Focus input when chatbot opens
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
     }
   }, [isOpen]);
 
-  // Auto-scroll to bottom
+  // Auto-scroll to bottom when messages change
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+    const scrollToBottom = () => {
+      if (scrollViewportRef.current) {
+        const viewport = scrollViewportRef.current.querySelector('[data-radix-scroll-area-viewport]');
+        if (viewport) {
+          setTimeout(() => {
+            viewport.scrollTo({
+              top: viewport.scrollHeight,
+              behavior: 'smooth'
+            });
+          }, 100);
+        }
+      }
+    };
+    scrollToBottom();
+  }, [messages, loading]);
 
   const loadChatHistory = async (sessionId) => {
     try {
@@ -95,6 +119,7 @@ const ChatBot = () => {
 
     setMessages(prev => [...prev, userMessage]);
     setInput('');
+    setIsTyping(true);
 
     try {
       const response = await axios.post(`${BACKEND_URL}/api/chatbot/message`, {
@@ -106,23 +131,45 @@ const ChatBot = () => {
         }
       });
 
-      setMessages(prev => [...prev.slice(0, -1), response.data]);
+      // Add the bot response as a new message, keep the user message
+      const botMessage = {
+        id: response.data.id || `bot_${Date.now()}`,
+        message: textToSend,
+        response: response.data.response,
+        timestamp: response.data.timestamp || new Date().toISOString(),
+        isUser: false
+      };
+      
+      setMessages(prev => [...prev, botMessage]);
+      setIsTyping(false);
     } catch (error) {
       console.error('Error sending message:', error);
-      const errorMsg = error.response?.status === 503 
-        ? 'AI service is temporarily unavailable. Please try again in a moment.'
-        : error.response?.data?.detail 
-        ? error.response.data.detail
-        : 'Sorry, I encountered an error. Please check your connection and try again.';
+      setIsTyping(false);
       
-      setMessages(prev => [
-        ...prev.slice(0, -1),
-        {
-          ...userMessage,
-          response: errorMsg,
-          error: true
-        }
-      ]);
+      // Provide user-friendly error messages
+      let errorMsg = 'Sorry, I encountered an error. Please try again in a moment.';
+      
+      if (error.response?.status === 503) {
+        errorMsg = 'AI service is temporarily unavailable. Please try again in a moment.';
+      } else if (error.response?.status === 500) {
+        errorMsg = error.response?.data?.detail || 'Service temporarily unavailable. Please try again shortly.';
+      } else if (error.response?.data?.detail) {
+        errorMsg = error.response.data.detail;
+      } else if (error.code === 'ECONNREFUSED' || error.message.includes('Network Error')) {
+        errorMsg = 'Cannot connect to the server. Please check your internet connection and ensure the backend is running.';
+      }
+      
+      // Add error message as bot response, keep user message
+      const errorBotMessage = {
+        id: `error_${Date.now()}`,
+        message: textToSend,
+        response: errorMsg,
+        timestamp: new Date().toISOString(),
+        isUser: false,
+        error: true
+      };
+      
+      setMessages(prev => [...prev, errorBotMessage]);
     } finally {
       setLoading(false);
     }
@@ -134,11 +181,20 @@ const ChatBot = () => {
         await axios.delete(`${BACKEND_URL}/api/chatbot/clear`, {
           params: { session_id: sessionId }
         });
-        setMessages([]);
-        localStorage.removeItem('chatbot_session_id');
+        
+        // Create new session
         const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         setSessionId(newSessionId);
         localStorage.setItem('chatbot_session_id', newSessionId);
+        
+        // Add welcome message for fresh start
+        setMessages([{
+          id: 'welcome',
+          message: '',
+          response: '👋 Chat cleared! I\'m here to help with disaster management, safety tips, weather alerts, and emergency preparedness. What would you like to know?',
+          timestamp: new Date().toISOString(),
+          isUser: false
+        }]);
       } catch (error) {
         console.error('Error clearing history:', error);
       }
@@ -170,11 +226,14 @@ const ChatBot = () => {
             <Button
               onClick={() => setIsOpen(true)}
               size="lg"
-              className="h-14 w-14 rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-110"
+              className="h-16 w-16 rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-110 bg-gradient-to-br from-primary to-primary/80"
               data-testid="chatbot-open-button"
+              title="Open Disaster Assistant"
             >
-              <MessageCircle className="h-6 w-6" />
-              <span className="absolute -top-1 -right-1 h-4 w-4 bg-destructive rounded-full animate-pulse" />
+              <MessageCircle className="h-7 w-7" />
+              <span className="absolute -top-1 -right-1 h-5 w-5 bg-destructive rounded-full animate-pulse flex items-center justify-center">
+                <span className="text-[10px] font-bold text-white">AI</span>
+              </span>
             </Button>
           </motion.div>
         )}
@@ -188,7 +247,7 @@ const ChatBot = () => {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.2 }}
-            className="fixed bottom-6 right-6 z-50 w-[400px] h-[600px] flex flex-col"
+            className="fixed bottom-6 right-6 z-50 w-[400px] h-[650px] flex flex-col"
           >
             <Card className="flex flex-col h-full shadow-2xl border-2">
               {/* Header */}
@@ -225,7 +284,7 @@ const ChatBot = () => {
               </div>
 
               {/* Messages */}
-              <ScrollArea ref={scrollRef} className="flex-1 p-4">
+              <ScrollArea ref={scrollViewportRef} className="flex-1 p-4">
                 {messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
                     <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
@@ -258,24 +317,68 @@ const ChatBot = () => {
                     {messages.map((msg, idx) => (
                       <ChatMessage key={msg.id || idx} message={msg} />
                     ))}
-                    {loading && (
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span className="text-sm">AI is thinking...</span>
-                      </div>
+                    {isTyping && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-center gap-3"
+                      >
+                        <div className="flex-shrink-0 h-8 w-8 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center">
+                          <MessageCircle className="h-4 w-4" />
+                        </div>
+                        <Card className="bg-muted p-3">
+                          <div className="flex gap-1">
+                            <motion.div
+                              animate={{ scale: [1, 1.3, 1] }}
+                              transition={{ repeat: Infinity, duration: 1, delay: 0 }}
+                              className="w-2 h-2 bg-primary/60 rounded-full"
+                            />
+                            <motion.div
+                              animate={{ scale: [1, 1.3, 1] }}
+                              transition={{ repeat: Infinity, duration: 1, delay: 0.2 }}
+                              className="w-2 h-2 bg-primary/60 rounded-full"
+                            />
+                            <motion.div
+                              animate={{ scale: [1, 1.3, 1] }}
+                              transition={{ repeat: Infinity, duration: 1, delay: 0.4 }}
+                              className="w-2 h-2 bg-primary/60 rounded-full"
+                            />
+                          </div>
+                        </Card>
+                      </motion.div>
                     )}
+                    <div ref={messagesEndRef} />
                   </div>
                 )}
               </ScrollArea>
 
+              {/* Quick Actions */}
+              {!loading && messages.length > 0 && suggestions.length > 0 && (
+                <div className="px-4 pb-2 border-t pt-2">
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {suggestions.slice(0, 3).map((suggestion, idx) => (
+                      <Badge
+                        key={idx}
+                        variant="secondary"
+                        className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors whitespace-nowrap text-xs"
+                        onClick={() => handleSuggestionClick(suggestion)}
+                      >
+                        {suggestion.length > 30 ? suggestion.substring(0, 30) + '...' : suggestion}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Input */}
-              <div className="p-4 border-t">
+              <div className="p-4 border-t bg-background">
                 <div className="flex gap-2">
                   <Input
+                    ref={inputRef}
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyPress={handleKeyPress}
-                    placeholder="Ask me anything..."
+                    placeholder={loading ? "Please wait..." : "Ask about disasters, weather, safety..."}
                     disabled={loading}
                     className="flex-1"
                     data-testid="chatbot-input"
@@ -284,6 +387,7 @@ const ChatBot = () => {
                     onClick={() => sendMessage()}
                     disabled={loading || !input.trim()}
                     size="icon"
+                    className="transition-transform hover:scale-105"
                     data-testid="chatbot-send-button"
                   >
                     {loading ? (
@@ -293,6 +397,9 @@ const ChatBot = () => {
                     )}
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground mt-2 text-center">
+                  Press Enter to send • Shift+Enter for new line
+                </p>
               </div>
             </Card>
           </motion.div>

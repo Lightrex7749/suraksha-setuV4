@@ -45,8 +45,13 @@ else:
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Using gemini-2.0-flash-exp for better performance
-    gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+    # Use gemini-2.0-flash which is available
+    try:
+        gemini_model = genai.GenerativeModel('gemini-2.0-flash')
+        logging.info("Successfully initialized Gemini AI with gemini-2.0-flash model")
+    except Exception as e:
+        logging.error(f"Failed to initialize Gemini AI: {e}")
+        gemini_model = None
 else:
     gemini_model = None
     logging.warning("Gemini API key not found. AI features will be disabled.")
@@ -58,6 +63,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
+
+# Lifespan handler will be added later after imports
+from contextlib import asynccontextmanager
 
 # Create the main app without a prefix
 app = FastAPI(title="Suraksha Setu API", version="1.0.0")
@@ -434,12 +442,14 @@ async def create_status_check(input: StatusCheckCreate):
     doc = status_obj.model_dump()
     doc['timestamp'] = doc['timestamp'].isoformat()
     
-    _ = await db.status_checks.insert_one(doc)
+    # Store in in-memory storage
+    in_memory_db["status_checks"].append(doc)
     return status_obj
 
 @api_router.get("/status", response_model=List[StatusCheck])
 async def get_status_checks():
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
+    # Use in-memory storage
+    status_checks = in_memory_db["status_checks"].copy()
     
     for check in status_checks:
         if isinstance(check['timestamp'], str):
@@ -1252,16 +1262,52 @@ Response:"""
         logging.error(f"Chatbot message error: {str(e)}")
         import traceback
         logging.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Error processing chatbot message: {str(e)}")
+        
+        # Check for rate limit errors
+        error_msg = str(e)
+        if "429" in error_msg or "quota" in error_msg.lower() or "rate limit" in error_msg.lower():
+            # Return a helpful response for rate limit errors
+            fallback_response = """I apologize, but I'm currently experiencing high demand and have reached my temporary usage limit. 
+
+**What you can do:**
+- **Try again in a minute** - My quota resets quickly
+- **Use the emergency resources** - Check the alerts and weather sections for real-time information
+- **Call emergency services** - For urgent help, dial 112 (India)
+
+**Common Safety Tips:**
+- During earthquakes: Drop, Cover, Hold On
+- During floods: Move to higher ground immediately
+- During cyclones: Stay indoors, away from windows
+- For air quality issues: Stay indoors, use masks if necessary
+
+I'll be back online shortly. Thank you for your patience! 🙏"""
+            
+            # Create fallback chat message
+            chat_message = ChatMessage(
+                session_id=request.session_id,
+                user_id=request.user_id,
+                message=request.message,
+                response=fallback_response,
+                context=disaster_context
+            )
+            
+            # Save to in-memory storage
+            message_doc = chat_message.model_dump()
+            message_doc['timestamp'] = message_doc['timestamp'].isoformat()
+            in_memory_db["chat_messages"].append(message_doc)
+            
+            return chat_message
+        
+        # For other errors, raise HTTP exception
+        raise HTTPException(status_code=500, detail="I'm having trouble processing your request. Please try again in a moment.")
 
 @api_router.get("/chatbot/history")
 async def get_chat_history(session_id: str, limit: int = Query(default=50, le=100)):
     """Get chat history for a session"""
     try:
-        messages = await db.chat_messages.find(
-            {"session_id": session_id},
-            {"_id": 0}
-        ).sort("timestamp", 1).limit(limit).to_list(limit)
+        # Use in-memory storage
+        messages = [msg for msg in in_memory_db["chat_messages"] 
+                   if msg.get("session_id") == session_id][:limit]
         
         # Convert timestamp strings back to datetime for response
         for msg in messages:
@@ -1318,11 +1364,17 @@ async def get_chatbot_suggestions():
 async def clear_chat_history(session_id: str):
     """Clear chat history for a session"""
     try:
-        result = await db.chat_messages.delete_many({"session_id": session_id})
+        # Use in-memory storage
+        initial_count = len(in_memory_db["chat_messages"])
+        in_memory_db["chat_messages"] = [
+            msg for msg in in_memory_db["chat_messages"]
+            if msg.get("session_id") != session_id
+        ]
+        deleted_count = initial_count - len(in_memory_db["chat_messages"])
         
         return {
             "success": True,
-            "deleted_count": result.deleted_count,
+            "deleted_count": deleted_count,
             "message": "Chat history cleared successfully"
         }
         
@@ -1340,7 +1392,8 @@ async def create_community_report(report: CommunityReportCreate):
     doc = report_obj.model_dump()
     doc['timestamp'] = doc['timestamp'].isoformat()
     
-    await db.community_reports.insert_one(doc)
+    # Store in in-memory storage
+    in_memory_db["community_reports"].append(doc)
     
     return report_obj
 
@@ -1351,13 +1404,20 @@ async def get_community_reports(
     limit: int = Query(default=50, le=100)
 ):
     """Get community reports with optional filters"""
-    query = {}
-    if status:
-        query['status'] = status
-    if report_type:
-        query['report_type'] = report_type
+    # Use in-memory storage
+    reports = in_memory_db["community_reports"].copy()
     
-    reports = await db.community_reports.find(query, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+    # Apply filters
+    if status:
+        reports = [r for r in reports if r.get('status') == status]
+    if report_type:
+        reports = [r for r in reports if r.get('report_type') == report_type]
+    
+    # Sort by timestamp (most recent first)
+    reports.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    
+    # Limit results
+    reports = reports[:limit]
     
     for report in reports:
         if isinstance(report.get('timestamp'), str):
@@ -1368,7 +1428,8 @@ async def get_community_reports(
 @api_router.get("/community-reports/{report_id}")
 async def get_community_report_by_id(report_id: str):
     """Get specific community report by ID"""
-    report = await db.community_reports.find_one({"id": report_id}, {"_id": 0})
+    # Use in-memory storage
+    report = next((r for r in in_memory_db["community_reports"] if r.get('id') == report_id), None)
     
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -1462,7 +1523,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    if client:
-        client.close()
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8001))
+    uvicorn.run(app, host="0.0.0.0", port=port)
