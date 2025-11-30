@@ -266,62 +266,139 @@ async def get_location_from_ip(ip_address: str = None):
 async def generate_weather_insights(weather_data: dict, location: str):
     """Generate AI-powered weather insights using Gemini"""
     try:
-        current = weather_data.get('current', {})
+        # Get Gemini API key
+        gemini_key = os.getenv("GEMINI_API_KEY", "")
         
+        if not gemini_key:
+            logging.warning("Gemini API key not found, using rule-based insights")
+            return generate_fallback_insights(weather_data, location)
+        
+        # Configure Gemini
+        genai.configure(api_key=gemini_key)
+        model = genai.GenerativeModel('gemini-pro')
+        
+        current = weather_data.get('current', {})
         temp = current.get('temperature', 20)
-        feels_like = current.get('feels_like', temp)
-        condition = current.get('condition', 'Clear').lower()
+        feels_like = current.get('apparent_temperature', temp)
+        condition = current.get('condition', 'Clear')
         humidity = current.get('humidity', 50)
         wind = current.get('wind_speed', 10)
-        rain = current.get('rain', 0)
+        rain = current.get('precipitation_probability', 0)
         
-        # Generate structured response
-        intro = f"Weather update for {location}: It's currently {temp}°C with {condition} conditions."
-        if feels_like != temp:
-            intro += f" Feels like {feels_like}°C."
-        intro += f" Humidity is at {humidity}% with wind speeds of {wind} km/h."
-        
-        # Clothing advice
-        if temp < 15:
-            wear = "* 🧥: **What to Wear**: Bundle up! Wear warm layers, a jacket, and consider gloves."
-        elif temp < 20:
-            wear = "* 🧥: **What to Wear**: Light jacket or sweater recommended for comfort."
-        elif temp < 25:
-            wear = "* 🧥: **What to Wear**: Comfortable clothing. A light layer might be nice."
-        else:
-            wear = "* 🧥: **What to Wear**: Light, breathable clothing. Stay cool!"
-        
-        # Activity advice
-        if rain > 5:
-            activities = "* ☀️: **Activities**: Indoor activities recommended due to rain."
-        elif condition in ['clear', 'sunny']:
-            activities = "* ☀️: **Activities**: Perfect day for outdoor activities and walks!"
-        else:
-            activities = "* ☀️: **Activities**: Good day for outdoor activities with some cloud cover."
-        
-        # Rain/hydration advice
-        if rain > 5:
-            rain_advice = "* 💧: **Rain**: Carry an umbrella! Rain is expected today."
-        elif rain > 0:
-            rain_advice = "* 💧: **Rain**: Light rain possible. Umbrella might be handy."
-        else:
-            rain_advice = "* 💧: **Hydration**: No rain expected. Stay hydrated throughout the day!"
-        
-        # Comfort advice
-        if humidity > 70:
-            comfort = "* 🌡️: **Comfort**: High humidity may feel muggy. Stay in shade when possible."
-        elif humidity < 30:
-            comfort = "* 🌡️: **Comfort**: Low humidity. Keep skin moisturized and drink plenty of water."
-        else:
-            comfort = "* 🌡️: **Comfort**: Pleasant conditions overall. Enjoy your day!"
-        
-        return f"{intro}\n\n{wear}\n{activities}\n{rain_advice}\n{comfort}"
+        # Create detailed prompt for Gemini
+        prompt = f"""You are a helpful weather assistant. Generate personalized weather advice for {location}.
 
+Current Conditions:
+- Temperature: {temp}°C (Feels like {feels_like}°C)
+- Weather: {condition}
+- Humidity: {humidity}%
+- Wind Speed: {wind} km/h
+- Rain Probability: {rain}%
+
+Generate EXACTLY 4 specific tips in this format (use these exact icons and categories):
+
+🧥 What to Wear: [specific clothing recommendation based on actual temperature and conditions]
+☀️ Activities: [specific activity suggestions based on actual weather]
+💧 Hydration: [specific rain/water advice based on actual conditions]
+🌡️ Comfort: [specific comfort tips based on actual humidity/temperature]
+
+Make each tip specific to the ACTUAL current conditions, not generic. Keep each tip to one concise sentence."""
+
+        # Generate with Gemini
+        response = model.generate_content(prompt)
+        
+        if response and response.text:
+            # Clean up the response
+            insights = response.text.strip()
+            
+            # Format with proper line breaks and bold
+            insights = insights.replace('🧥', '\n\n* 🧥:')
+            insights = insights.replace('☀️', '\n* ☀️:')
+            insights = insights.replace('💧', '\n* 💧:')
+            insights = insights.replace('🌡️', '\n* 🌡️:')
+            
+            # Make category names bold
+            insights = insights.replace('What to Wear:', '**What to Wear**:')
+            insights = insights.replace('Activities:', '**Activities**:')
+            insights = insights.replace('Hydration:', '**Hydration**:')
+            insights = insights.replace('Comfort:', '**Comfort**:')
+            insights = insights.replace('Rain:', '**Rain**:')
+            
+            return insights.strip()
+        else:
+            return generate_fallback_insights(weather_data, location)
+            
     except Exception as e:
         logging.error(f"Gemini weather insights error: {str(e)}")
-        temp = weather_data.get('current', {}).get('temperature', 0)
-        condition = weather_data.get('current', {}).get('condition', 'Clear')
-        return f"🌡️ Current temperature is {temp}°C with {condition.lower()} conditions. Have a great day!"
+        return generate_fallback_insights(weather_data, location)
+
+def generate_fallback_insights(weather_data: dict, location: str):
+    """Generate fallback insights when Gemini is unavailable"""
+    current = weather_data.get('current', {})
+    
+    temp = current.get('temperature', 20)
+    feels_like = current.get('apparent_temperature', temp)
+    condition = current.get('condition', 'Clear').lower()
+    humidity = current.get('humidity', 50)
+    wind = current.get('wind_speed', 10)
+    rain = current.get('precipitation_probability', 0)
+    
+    # Intro with actual conditions
+    intro = f"Weather update for {location}: {temp}°C with {condition} conditions."
+    if feels_like != temp:
+        intro += f" Feels like {feels_like}°C."
+    
+    # Dynamic clothing based on actual temp
+    if temp < 10:
+        wear = "* 🧥: **What to Wear**: Heavy winter coat, gloves, and warm layers needed for {temp}°C."
+    elif temp < 15:
+        wear = "* 🧥: **What to Wear**: Jacket required - it's quite cool at {temp}°C."
+    elif temp < 20:
+        wear = "* 🧥: **What to Wear**: Light jacket recommended for {temp}°C weather."
+    elif temp < 25:
+        wear = "* 🧥: **What to Wear**: Comfortable clothing perfect for {temp}°C."
+    elif temp < 30:
+        wear = "* 🧥: **What to Wear**: Light, breathable clothing for {temp}°C."
+    else:
+        wear = "* 🧥: **What to Wear**: Very light clothing essential - it's {temp}°C!"
+    
+    # Activity based on actual conditions
+    if rain > 50:
+        activities = f"* ☀️: **Activities**: Heavy rain expected ({rain}% chance) - indoor activities recommended."
+    elif rain > 20:
+        activities = f"* ☀️: **Activities**: {rain}% rain chance - bring umbrella if going out."
+    elif condition in ['clear', 'sunny']:
+        activities = f"* ☀️: **Activities**: Perfect {condition} day at {temp}°C - great for outdoor activities!"
+    elif wind > 30:
+        activities = f"* ☀️: **Activities**: Windy conditions ({wind} km/h) - secure loose items."
+    else:
+        activities = f"* ☀️: **Activities**: Pleasant {condition} weather for most outdoor activities."
+    
+    # Rain/hydration with actual probability
+    if rain > 50:
+        rain_advice = f"* 💧: **Rain**: {rain}% rain probability - umbrella essential!"
+    elif rain > 20:
+        rain_advice = f"* 💧: **Rain**: {rain}% rain chance - keep umbrella handy."
+    elif temp > 30:
+        rain_advice = f"* 💧: **Hydration**: Hot at {temp}°C - drink water frequently!"
+    else:
+        rain_advice = "* 💧: **Hydration**: Stay hydrated throughout the day."
+    
+    # Comfort with actual humidity
+    if humidity > 80:
+        comfort = f"* 🌡️: **Comfort**: Very humid ({humidity}%) - expect muggy conditions."
+    elif humidity > 70:
+        comfort = f"* 🌡️: **Comfort**: High humidity ({humidity}%) - may feel warmer than {temp}°C."
+    elif humidity < 30:
+        comfort = f"* 🌡️: **Comfort**: Low humidity ({humidity}%) - moisturize and hydrate."
+    elif temp > 35:
+        comfort = f"* 🌡️: **Comfort**: Extreme heat at {temp}°C - limit sun exposure."
+    elif temp < 5:
+        comfort = f"* 🌡️: **Comfort**: Very cold at {temp}°C - limit outdoor time."
+    else:
+        comfort = f"* 🌡️: **Comfort**: Pleasant conditions at {temp}°C and {humidity}% humidity."
+    
+    return f"{intro}\n\n{wear}\n{activities}\n{rain_advice}\n{comfort}"
 
 async def reverse_geocode(lat: float, lon: float):
     """Convert coordinates to readable location name"""
