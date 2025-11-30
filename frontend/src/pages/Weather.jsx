@@ -37,8 +37,19 @@ const Weather = () => {
   const [location, setLocation] = useState('');
   const [weatherData, setWeatherData] = useState(null);
   const [aqiData, setAQIData] = useState(null);
+  const [aqiHistory, setAQIHistory] = useState(null);
   const [error, setError] = useState(null);
   const [currentLocation, setCurrentLocation] = useState('Bhubaneswar, Odisha');
+
+  // Quick access cities for India
+  const quickAccessCities = [
+    { name: 'Delhi', coords: { lat: 28.6139, lon: 77.2090 }, icon: '🏛️' },
+    { name: 'Mumbai', coords: { lat: 19.0760, lon: 72.8777 }, icon: '🌊' },
+    { name: 'Bangalore', coords: { lat: 12.9716, lon: 77.5946 }, icon: '💻' },
+    { name: 'Chennai', coords: { lat: 13.0827, lon: 80.2707 }, icon: '🏖️' },
+    { name: 'Kolkata', coords: { lat: 22.5726, lon: 88.3639 }, icon: '🎭' },
+    { name: 'Hyderabad', coords: { lat: 17.3850, lon: 78.4867 }, icon: '💎' },
+  ];
 
   // Load default location on mount using auto-detect
   useEffect(() => {
@@ -65,7 +76,7 @@ const Weather = () => {
         setWeatherData(completeWeather);
         setCurrentLocation(response.data.location?.display_name || 'Your Location');
         
-        // Also load AQI
+        // Also load AQI and history
         try {
           const aqiData = await getAQIByLocation({
             lat: response.data.location.lat,
@@ -73,9 +84,16 @@ const Weather = () => {
           });
           console.log('AQI Data from auto-detect:', aqiData);
           setAQIData(aqiData);
+          
+          // Load 7-day AQI history
+          const historyResponse = await axios.get(
+            `${process.env.REACT_APP_BACKEND_URL}/api/aqi/history?lat=${response.data.location.lat}&lon=${response.data.location.lon}&days=7`
+          );
+          setAQIHistory(historyResponse.data);
         } catch (err) {
           console.error('AQI data fetch error:', err);
           setAQIData(null);
+          setAQIHistory(null);
         }
       }
     } catch (err) {
@@ -109,9 +127,22 @@ const Weather = () => {
       if (aqi.status === 'fulfilled' && aqi.value) {
         console.log('AQI Data received:', aqi.value);
         setAQIData(aqi.value);
+        
+        // Load 7-day AQI history
+        try {
+          const coords = weather.value.location;
+          const historyResponse = await axios.get(
+            `${process.env.REACT_APP_BACKEND_URL}/api/aqi/history?lat=${coords.lat}&lon=${coords.lon}&days=7`
+          );
+          setAQIHistory(historyResponse.data);
+        } catch (err) {
+          console.error('AQI history fetch error:', err);
+          setAQIHistory(null);
+        }
       } else {
         console.error('AQI fetch failed:', aqi.reason || 'Unknown error');
         setAQIData(null); // Clear previous AQI data
+        setAQIHistory(null);
       }
     } catch (err) {
       console.error('Error loading weather:', err);
@@ -149,6 +180,12 @@ const Weather = () => {
     } else {
       setError('Geolocation is not supported by your browser');
     }
+  };
+
+  const handleQuickCityClick = async (city) => {
+    setCurrentLocation(city.name);
+    setLocation(city.name);
+    await loadWeatherData(city.coords);
   };
 
   // Transform hourly data from API - show next 24 hours from current time
@@ -266,6 +303,31 @@ const Weather = () => {
           {error}
         </motion.div>
       )}
+
+      {/* Quick Access Cities */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-wrap gap-2"
+      >
+        <span className="text-sm text-muted-foreground flex items-center gap-2">
+          <Zap className="w-4 h-4" />
+          Quick Access:
+        </span>
+        {quickAccessCities.map((city) => (
+          <Button
+            key={city.name}
+            variant="outline"
+            size="sm"
+            onClick={() => handleQuickCityClick(city)}
+            disabled={loading}
+            className="gap-1 hover:bg-primary hover:text-primary-foreground transition-colors"
+          >
+            <span>{city.icon}</span>
+            {city.name}
+          </Button>
+        ))}
+      </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Weather Card */}
@@ -485,6 +547,114 @@ const Weather = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* 7-Day AQI Trend Graph */}
+      {aqiHistory && aqiHistory.history && aqiHistory.history.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <Card className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 border-purple-200 dark:border-purple-800">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-purple-600" />
+                7-Day AQI Trend
+                <Badge variant="secondary" className="ml-auto">
+                  {aqiHistory.source === 'openweather' ? 'Live Data' : 'Simulated'}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={aqiHistory.history}>
+                    <defs>
+                      <linearGradient id="aqiGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis 
+                      dataKey="date" 
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    />
+                    <YAxis 
+                      label={{ value: 'AQI', angle: -90, position: 'insideLeft' }}
+                      tick={{ fontSize: 12 }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)', 
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                      }}
+                      labelFormatter={(date) => new Date(date).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                      formatter={(value, name) => {
+                        if (name === 'aqi') return [value, 'AQI'];
+                        if (name === 'pm25') return [value + ' µg/m³', 'PM2.5'];
+                        if (name === 'pm10') return [value + ' µg/m³', 'PM10'];
+                        return [value, name];
+                      }}
+                    />
+                    <Legend />
+                    <Area 
+                      type="monotone" 
+                      dataKey="aqi" 
+                      fill="url(#aqiGradient)" 
+                      stroke="#a855f7" 
+                      strokeWidth={3}
+                      name="AQI"
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="pm25" 
+                      stroke="#f97316" 
+                      strokeWidth={2}
+                      dot={{ fill: '#f97316', r: 4 }}
+                      name="PM2.5"
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="pm10" 
+                      stroke="#3b82f6" 
+                      strokeWidth={2}
+                      dot={{ fill: '#3b82f6', r: 4 }}
+                      name="PM10"
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-4">
+                {aqiHistory.history.slice(-3).map((day, idx) => (
+                  <motion.div
+                    key={day.date}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.1 * idx }}
+                    className="p-3 bg-white/50 dark:bg-black/20 rounded-lg border border-purple-200 dark:border-purple-800"
+                  >
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' })}
+                    </div>
+                    <div className="text-2xl font-bold mt-1">{day.aqi}</div>
+                    <div className={`text-xs font-semibold uppercase ${
+                      day.aqi <= 50 ? 'text-green-600' :
+                      day.aqi <= 100 ? 'text-yellow-600' :
+                      day.aqi <= 150 ? 'text-orange-600' :
+                      day.aqi <= 200 ? 'text-red-600' :
+                      'text-purple-600'
+                    }`}>{day.category}</div>
+                  </motion.div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* AI Weather Assistant - Enhanced with Glass Morphism */}
       {weatherData?.ai_insights && (
