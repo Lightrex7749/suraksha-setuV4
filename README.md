@@ -8,7 +8,7 @@
 **Suraksha Setu** is a comprehensive disaster management platform designed to provide early warnings, real-time alerts, and community collaboration tools for natural disaster preparedness and response. The platform serves multiple user types including students, scientists, administrators, and general public.
 
 ## 🌟 Features
-
+//hii//
 ### 🎯 Core Functionality
 - **Real-time Disaster Monitoring**: Track ongoing disasters and receive instant alerts
 - **Weather Integration**: Live weather updates and forecasts
