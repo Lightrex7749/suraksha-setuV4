@@ -2429,7 +2429,12 @@ async def get_nearby_alerts(
         if not alerts_data:
             return {"alerts": [], "count": 0}
         
-        alerts = alerts_data.get('alerts', [])
+        # Handle both array and object formats
+        if isinstance(alerts_data, list):
+            alerts = alerts_data
+        else:
+            alerts = alerts_data.get('alerts', [])
+        
         nearby_alerts = []
         
         # Filter alerts by distance
@@ -2449,7 +2454,7 @@ async def get_nearby_alerts(
                     nearby_alerts.append(alert_copy)
         
         # Sort by severity and distance
-        severity_order = {"critical": 0, "warning": 1, "info": 2}
+        severity_order = {"red": 0, "critical": 0, "orange": 1, "warning": 1, "yellow": 2, "info": 2}
         nearby_alerts.sort(
             key=lambda x: (
                 severity_order.get(x.get('severity', 'info'), 3),
@@ -2466,7 +2471,7 @@ async def get_nearby_alerts(
         
     except Exception as e:
         logging.error(f"Nearby alerts error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to fetch nearby alerts")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch nearby alerts: {str(e)}")
 
 # ==================== WEBSOCKET ENDPOINTS ====================
 
