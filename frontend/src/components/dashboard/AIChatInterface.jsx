@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
+import { toast } from 'sonner';
 import {
   Select,
   SelectContent,
@@ -18,13 +19,7 @@ import {
 const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
 const AIChatInterface = () => {
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      content: '👋 Namaste! I\'m Suraksha AI, your multilingual disaster assistant. Ask me anything about:\n\n🌧️ Weather & forecasts\n🚨 Active alerts in your area\n💨 AQI & air quality\n🌊 Flood/cyclone risks\n📍 PIN-code based updates\n\nExample: "Kal barish hogi kya?" or "Show AQI trend Delhi"',
-      timestamp: new Date()
-    }
-  ]);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -337,69 +332,71 @@ const AIChatInterface = () => {
 
       <CardContent className="p-4 space-y-4">
         {/* Messages Area */}
-        <ScrollArea className={`${isExpanded ? 'h-[calc(100vh-320px)]' : 'h-80'} pr-4`}>
-          <div className="space-y-4">
-            <AnimatePresence>
-              {messages.map((message, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.3, ease: "easeOut" }}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-md ${
-                      message.role === 'user'
-                        ? 'bg-gradient-to-br from-primary to-purple-600 text-white'
-                        : 'bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border-2 border-border'
-                    }`}
+        {messages.length > 0 && (
+          <ScrollArea className={`${isExpanded ? 'h-[calc(100vh-320px)]' : 'h-80'} pr-4`}>
+            <div className="space-y-4">
+              <AnimatePresence>
+                {messages.map((message, index) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.3, ease: "easeOut" }}
+                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    {message.role === 'assistant' && (
-                      <div className="flex items-center gap-2 mb-2 pb-2 border-b border-border/50">
-                        <div className="bg-gradient-to-br from-primary to-purple-600 p-1 rounded-full">
-                          <Bot className="h-3.5 w-3.5 text-white" />
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-md ${
+                        message.role === 'user'
+                          ? 'bg-gradient-to-br from-primary to-purple-600 text-white'
+                          : 'bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border-2 border-border'
+                      }`}
+                    >
+                      {message.role === 'assistant' && (
+                        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-border/50">
+                          <div className="bg-gradient-to-br from-primary to-purple-600 p-1 rounded-full">
+                            <Bot className="h-3.5 w-3.5 text-white" />
+                          </div>
+                          <span className="text-xs font-semibold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+                            Suraksha AI
+                          </span>
                         </div>
-                        <span className="text-xs font-semibold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
-                          Suraksha AI
-                        </span>
+                      )}
+                      <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                        {message.content}
+                      </p>
+                      <span className={`text-xs opacity-70 mt-2 block ${message.role === 'user' ? 'text-white/80' : 'text-muted-foreground'}`}>
+                        {message.timestamp.toLocaleTimeString()}
+                      </span>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+              
+              {loading && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex justify-start"
+                >
+                  <div className="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border-2 border-border rounded-2xl px-4 py-3 shadow-md">
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        <div className="absolute inset-0 bg-primary/20 rounded-full blur-sm"></div>
                       </div>
-                    )}
-                    <p className="text-sm whitespace-pre-wrap leading-relaxed">
-                      {message.content}
-                    </p>
-                    <span className={`text-xs opacity-70 mt-2 block ${message.role === 'user' ? 'text-white/80' : 'text-muted-foreground'}`}>
-                      {message.timestamp.toLocaleTimeString()}
-                    </span>
+                      <span className="text-sm text-muted-foreground font-medium">AI is thinking...</span>
+                    </div>
                   </div>
                 </motion.div>
-              ))}
-            </AnimatePresence>
-            
-            {loading && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex justify-start"
-              >
-                <div className="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border-2 border-border rounded-2xl px-4 py-3 shadow-md">
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                      <div className="absolute inset-0 bg-primary/20 rounded-full blur-sm"></div>
-                    </div>
-                    <span className="text-sm text-muted-foreground font-medium">AI is thinking...</span>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-        </ScrollArea>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          </ScrollArea>
+        )}
 
         {/* Quick Prompts */}
-        {messages.length === 1 && (
+        {messages.length === 0 && (
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}

@@ -136,8 +136,125 @@ async def geocode_location(location_name: str):
         logging.error(f"Unexpected geocoding error: {str(e)}")
         return None
 
+async def fetch_openweather_data(lat: float, lon: float):
+    """Fetch weather data from OpenWeatherMap API"""
+    try:
+        openweather_key = os.getenv("OPENWEATHER_API_KEY", "")
+        
+        if not openweather_key:
+            logging.warning("OPENWEATHER_API_KEY not set, using fallback")
+            return None
+        
+        logging.info(f"Fetching weather from OpenWeather for lat={lat}, lon={lon}")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Use current weather API (always free) + 5-day forecast
+            current_url = "https://api.openweathermap.org/data/2.5/weather"
+            forecast_url = "https://api.openweathermap.org/data/2.5/forecast"
+            
+            params = {
+                "lat": lat,
+                "lon": lon,
+                "appid": openweather_key,
+                "units": "metric"  # Celsius
+            }
+            
+            # Fetch current weather
+            current_response = await client.get(current_url, params=params)
+            current_response.raise_for_status()
+            current_data = current_response.json()
+            
+            # Fetch forecast
+            forecast_response = await client.get(forecast_url, params=params)
+            forecast_response.raise_for_status()
+            forecast_data = forecast_response.json()
+            
+            # Combine into OneCall-like format
+            combined_data = {
+                "lat": lat,
+                "lon": lon,
+                "current": {
+                    "dt": current_data.get("dt"),
+                    "temp": current_data.get("main", {}).get("temp"),
+                    "feels_like": current_data.get("main", {}).get("feels_like"),
+                    "humidity": current_data.get("main", {}).get("humidity"),
+                    "pressure": current_data.get("main", {}).get("pressure"),
+                    "wind_speed": current_data.get("wind", {}).get("speed"),
+                    "wind_deg": current_data.get("wind", {}).get("deg"),
+                    "clouds": current_data.get("clouds", {}).get("all"),
+                    "weather": current_data.get("weather", []),
+                    "rain": current_data.get("rain", {})
+                },
+                "hourly": [],
+                "daily": []
+            }
+            
+            # Process forecast into hourly and daily
+            if "list" in forecast_data:
+                daily_temps = {}
+                for item in forecast_data["list"]:
+                    dt = item.get("dt")
+                    date = datetime.fromtimestamp(dt, tz=timezone.utc).strftime("%Y-%m-%d")
+                    
+                    # Add to hourly (first 24 items = 24 hours)
+                    if len(combined_data["hourly"]) < 24:
+                        combined_data["hourly"].append({
+                            "dt": dt,
+                            "temp": item.get("main", {}).get("temp"),
+                            "feels_like": item.get("main", {}).get("feels_like"),
+                            "humidity": item.get("main", {}).get("humidity"),
+                            "wind_speed": item.get("wind", {}).get("speed"),
+                            "weather": item.get("weather", []),
+                            "pop": item.get("pop", 0),
+                            "rain": item.get("rain", {})
+                        })
+                    
+                    # Aggregate for daily
+                    if date not in daily_temps:
+                        daily_temps[date] = {
+                            "temps": [],
+                            "humidity": [],
+                            "rain": 0,
+                            "pop": 0,
+                            "weather": item.get("weather", []),
+                            "dt": dt,
+                            "wind_speed": item.get("wind", {}).get("speed", 0)
+                        }
+                    daily_temps[date]["temps"].append(item.get("main", {}).get("temp", 0))
+                    daily_temps[date]["humidity"].append(item.get("main", {}).get("humidity", 0))
+                    daily_temps[date]["rain"] += item.get("rain", {}).get("3h", 0)
+                    daily_temps[date]["pop"] = max(daily_temps[date]["pop"], item.get("pop", 0))
+                
+                # Create daily forecast
+                for date, data in list(daily_temps.items())[:7]:
+                    combined_data["daily"].append({
+                        "dt": data["dt"],
+                        "temp": {
+                            "max": max(data["temps"]),
+                            "min": min(data["temps"])
+                        },
+                        "humidity": sum(data["humidity"]) / len(data["humidity"]),
+                        "wind_speed": data["wind_speed"],
+                        "weather": data["weather"],
+                        "pop": data["pop"],
+                        "rain": data["rain"]
+                    })
+            
+            logging.info(f"OpenWeather API success for lat={lat}, lon={lon}")
+            return combined_data
+            
+    except httpx.HTTPStatusError as e:
+        logging.error(f"OpenWeather API HTTP error: {e.response.status_code} - {e.response.text}")
+        return None
+    except httpx.RequestError as e:
+        logging.error(f"OpenWeather API request error: {str(e)}")
+        return None
+    except Exception as e:
+        logging.error(f"OpenWeather API error: {str(e)}", exc_info=True)
+        return None
+
 async def fetch_open_meteo_weather(lat: float, lon: float):
-    """Fetch weather data from Open-Meteo API"""
+    """Fetch weather data from Open-Meteo API (Fallback)"""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             # Current weather and hourly forecast
@@ -483,6 +600,73 @@ def calculate_aqi_from_pollutants(pollutants: Dict[str, float]) -> Dict[str, Any
         "color": color
     }
 
+def openweather_condition_to_text(weather_data: dict) -> str:
+    """Convert OpenWeather condition to readable text"""
+    if weather_data and len(weather_data) > 0:
+        main = weather_data[0].get("main", "Unknown")
+        description = weather_data[0].get("description", "")
+        return description.title() if description else main
+    return "Unknown"
+
+def transform_openweather_data(ow_data: dict, location_name: str = "Unknown"):
+    """Transform OpenWeather API response to our app's format"""
+    current = ow_data.get("current", {})
+    hourly = ow_data.get("hourly", [])
+    daily = ow_data.get("daily", [])
+    
+    # Current weather
+    current_weather = {
+        "location": location_name,
+        "name": location_name,
+        "coordinates": {"lat": ow_data.get("lat"), "lon": ow_data.get("lon")},
+        "temperature": int(current.get("temp", 0)),
+        "apparent_temperature": int(current.get("feels_like", 0)),
+        "feels_like": int(current.get("feels_like", 0)),
+        "condition": openweather_condition_to_text(current.get("weather", [])),
+        "humidity": int(current.get("humidity", 0)),
+        "wind_speed": int(current.get("wind_speed", 0)),
+        "wind_direction": int(current.get("wind_deg", 0)),
+        "pressure": int(current.get("pressure", 0)),
+        "cloud_cover": int(current.get("clouds", 0)),
+        "rain": current.get("rain", {}).get("1h", 0) if isinstance(current.get("rain"), dict) else 0,
+        "precipitation": current.get("rain", {}).get("1h", 0) if isinstance(current.get("rain"), dict) else 0,
+        "weather_code": current.get("weather", [{}])[0].get("id", 0) if current.get("weather") else 0,
+        "last_updated": datetime.fromtimestamp(current.get("dt", 0), tz=timezone.utc).isoformat() if current.get("dt") else datetime.now(timezone.utc).isoformat()
+    }
+    
+    # Hourly forecast
+    hourly_forecast = []
+    for hour in hourly[:24]:  # Next 24 hours
+        hourly_forecast.append({
+            "time": datetime.fromtimestamp(hour.get("dt", 0), tz=timezone.utc).isoformat(),
+            "temperature": int(hour.get("temp", 0)),
+            "condition": openweather_condition_to_text(hour.get("weather", [])),
+            "precipitation_probability": int(hour.get("pop", 0) * 100),
+            "precipitation": hour.get("rain", {}).get("1h", 0) if isinstance(hour.get("rain"), dict) else 0,
+            "humidity": int(hour.get("humidity", 0)),
+            "wind_speed": int(hour.get("wind_speed", 0))
+        })
+    
+    # Daily forecast
+    daily_forecast = []
+    for day in daily[:7]:  # Next 7 days
+        daily_forecast.append({
+            "date": datetime.fromtimestamp(day.get("dt", 0), tz=timezone.utc).strftime("%Y-%m-%d"),
+            "temperature_max": int(day.get("temp", {}).get("max", 0)),
+            "temperature_min": int(day.get("temp", {}).get("min", 0)),
+            "condition": openweather_condition_to_text(day.get("weather", [])),
+            "precipitation_sum": day.get("rain", 0),
+            "precipitation_probability": int(day.get("pop", 0) * 100),
+            "humidity": int(day.get("humidity", 0)),
+            "wind_speed": int(day.get("wind_speed", 0))
+        })
+    
+    return {
+        "current": current_weather,
+        "hourly": hourly_forecast,
+        "daily": daily_forecast
+    }
+
 # Define Models
 class StatusCheck(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -782,7 +966,29 @@ async def get_weather_auto_detect(request: Request):
             "city": "India"
         }
     
-    # Fetch weather data
+    # Try OpenWeather first
+    weather_data = await fetch_openweather_data(location_data["lat"], location_data["lon"])
+    
+    if weather_data:
+        # Transform OpenWeather data
+        transformed_data = transform_openweather_data(weather_data, location_data.get("display_name", "your location"))
+        
+        # Get AI insights
+        ai_insights = await generate_weather_insights(
+            transformed_data,
+            location_data.get("display_name", "your location")
+        )
+        
+        return {
+            "location": location_data,
+            "current": transformed_data["current"],
+            "ai_insights": ai_insights,
+            "detection_method": "ip" if client_ip else "default",
+            "source": "openweather"
+        }
+    
+    # Fallback to Open-Meteo
+    logging.info("OpenWeather failed, trying Open-Meteo...")
     weather_data = await fetch_open_meteo_weather(location_data["lat"], location_data["lon"])
     
     if not weather_data:
@@ -846,7 +1052,28 @@ async def get_weather_by_location(
             detail="Either 'q' (location name) or 'lat' and 'lon' must be provided"
         )
     
-    # Fetch weather data from Open-Meteo
+    # Try OpenWeather first
+    weather_data = await fetch_openweather_data(coordinates["lat"], coordinates["lon"])
+    
+    if weather_data:
+        # Transform OpenWeather data to our format
+        location_name = coordinates.get("display_name", "Unknown")
+        transformed_data = transform_openweather_data(weather_data, location_name)
+        
+        # Generate AI insights if requested
+        weather_insights = None
+        if ai_insights:
+            weather_insights = await generate_weather_insights(
+                transformed_data,
+                location_name
+            )
+            transformed_data["ai_insights"] = weather_insights
+        
+        transformed_data["source"] = "openweather"
+        return transformed_data
+    
+    # Fallback to Open-Meteo if OpenWeather fails
+    logging.info("OpenWeather failed, trying Open-Meteo...")
     weather_data = await fetch_open_meteo_weather(coordinates["lat"], coordinates["lon"])
     
     if not weather_data:
@@ -950,6 +1177,42 @@ async def get_rainfall_trends(
 ):
     """Get rainfall trend data for visualization"""
     
+    # Try OpenWeather first
+    weather_data = await fetch_openweather_data(lat, lon)
+    
+    if weather_data:
+        hourly = weather_data.get('hourly', [])
+        daily = weather_data.get('daily', [])
+        
+        # Daily rainfall trends from OpenWeather
+        daily_trends = []
+        for i, day in enumerate(daily[:min(days, len(daily))]):
+            daily_trends.append({
+                "date": datetime.fromtimestamp(day.get("dt", 0), tz=timezone.utc).strftime("%Y-%m-%d"),
+                "rainfall": day.get("rain", 0),
+                "precipitation": day.get("rain", 0),
+                "probability": int(day.get("pop", 0) * 100)
+            })
+        
+        # Hourly rainfall for next 48 hours
+        hourly_trends = []
+        for i, hour in enumerate(hourly[:48]):
+            hourly_trends.append({
+                "time": datetime.fromtimestamp(hour.get("dt", 0), tz=timezone.utc).isoformat(),
+                "rainfall": hour.get("rain", {}).get("1h", 0) if isinstance(hour.get("rain"), dict) else 0,
+                "precipitation": hour.get("rain", {}).get("1h", 0) if isinstance(hour.get("rain"), dict) else 0,
+                "probability": int(hour.get("pop", 0) * 100)
+            })
+        
+        return {
+            "daily_trends": daily_trends,
+            "hourly_trends": hourly_trends,
+            "coordinates": {"lat": lat, "lon": lon},
+            "source": "openweather"
+        }
+    
+    # Fallback to Open-Meteo
+    logging.info("OpenWeather failed, trying Open-Meteo for rainfall trends...")
     weather_data = await fetch_open_meteo_weather(lat, lon)
     
     if not weather_data:
@@ -2348,6 +2611,99 @@ async def get_chatbot_suggestions():
         return {"suggestions": suggestions[:6]}  # Return top 6
         
     except Exception as e:
+        logging.error(f"Error fetching suggestions: {str(e)}")
+        # Return fallback suggestions
+        return {"suggestions": [
+            "What should I do during an earthquake?",
+            "How to prepare for a cyclone?",
+            "Tell me about air quality safety tips"
+        ]}
+
+# ==================== SIMPLE CHAT ENDPOINT (Voice Chatbot) ====================
+
+class SimpleChatRequest(BaseModel):
+    message: str
+    context: Optional[str] = "dashboard"
+    language: Optional[str] = "en-IN"
+
+@api_router.post("/chat")
+async def simple_chat(request: SimpleChatRequest):
+    """Simple chat endpoint for voice chatbot - optimized for quick responses"""
+    if not gemini_model:
+        raise HTTPException(status_code=503, detail="AI service is not available")
+    
+    try:
+        # Get real-time disaster context
+        disaster_context = await get_disaster_context()
+        
+        # Build concise context info
+        context_info = f"""Current Status:
+• Weather: {disaster_context.get('current_weather', {}).get('temperature', 'N/A')}°C, {disaster_context.get('current_weather', {}).get('condition', 'N/A')}
+• AQI: {disaster_context.get('air_quality', {}).get('aqi', 'N/A')} ({disaster_context.get('air_quality', {}).get('category', 'N/A')})
+• Active Alerts: {disaster_context.get('alert_count', 0)}"""
+        
+        # Enhanced prompt for natural conversation
+        prompt = f"""You are Suraksha AI, a friendly disaster management and safety expert in India.
+
+{context_info}
+
+User: {request.message}
+
+IMPORTANT:
+- Answer naturally and conversationally (like ChatGPT)
+- Keep responses concise (2-3 short paragraphs max)
+- Use bullet points (-) for lists
+- Use **bold** for critical warnings
+- If emergency: Give immediate safety steps first
+- Support multilingual queries (Hindi, Tamil, Telugu, Bengali, Marathi, English)
+- Be warm, helpful, and empathetic
+- If greeting: Respond warmly and offer help
+
+Answer:"""
+
+        response = gemini_model.generate_content(prompt)
+        response_text = response.text if hasattr(response, 'text') else str(response)
+        
+        return {
+            "response": response_text,
+            "message": request.message,
+            "data": {
+                "weather": disaster_context.get('current_weather'),
+                "aqi": disaster_context.get('air_quality'),
+                "alerts": disaster_context.get('active_alerts', [])[:3]  # Top 3 alerts
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logging.error(f"Simple chat error: {str(e)}")
+        
+        # Smart fallback responses based on keywords
+        message_lower = request.message.lower()
+        
+        if "429" in str(e) or "quota" in str(e).lower():
+            fallback = "I'm experiencing high demand right now. Please try again in a moment. For emergencies, dial 112."
+        elif any(word in message_lower for word in ['barish', 'rain', 'baarish']):
+            fallback = "🌧️ For rainfall updates, check the Weather section in your dashboard. Stay safe and carry an umbrella if rain is expected!"
+        elif any(word in message_lower for word in ['aqi', 'air quality', 'pollution']):
+            fallback = "💨 Check the AQI section for real-time air quality data in your area. If AQI is high, limit outdoor activities and use masks."
+        elif any(word in message_lower for word in ['flood', 'baarh', 'bhaadh']):
+            fallback = "🌊 During floods: Move to higher ground immediately, avoid walking/driving through water, and keep emergency contacts handy."
+        elif any(word in message_lower for word in ['alert', 'warning']):
+            fallback = "🚨 Check the Alerts tab for active warnings in your area. Enable notifications to stay updated on critical alerts."
+        elif any(word in message_lower for word in ['hello', 'hi', 'hey', 'namaste']):
+            fallback = "👋 Hello! I'm Suraksha AI, your disaster safety assistant. Ask me about weather, air quality, floods, earthquakes, or any safety concerns!"
+        else:
+            fallback = "I'm here to help! Ask me about weather forecasts, air quality, disaster alerts, safety tips, or any emergency-related questions."
+        
+        return {
+            "response": fallback,
+            "message": request.message,
+            "data": {},
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+# ==================== EXISTING ENDPOINTS CONTINUE ====================
         logging.error(f"Error getting suggestions: {str(e)}")
         # Return default suggestions on error
         return {
