@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Users, Home, Zap, Activity } from 'lucide-react';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000/api';
+const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
 
 const StatCard = ({ icon: Icon, label, value, subtext, color, loading }) => (
   <div className={`bg-card border border-border rounded-xl p-4 flex items-center gap-4 ${loading ? 'animate-pulse' : ''}`}>

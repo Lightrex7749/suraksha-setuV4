@@ -4,7 +4,7 @@ import { Activity, TrendingUp, TrendingDown } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000/api';
+const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
 
 const LiveAQIChart = () => {
   const [data, setData] = useState([]);

@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Download, Share2 } from 'lucide-react';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000/api';
+const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
 
 const Dashboard = () => {
   const [recommendations, setRecommendations] = useState([]);

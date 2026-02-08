@@ -3,7 +3,7 @@ import { CloudRain, Wind, Droplets, Sun, Thermometer, Cloud, CloudDrizzle } from
 import { motion } from 'framer-motion';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000/api';
+const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
 
 const WeatherSummary = () => {
   const [weatherData, setWeatherData] = useState(null);

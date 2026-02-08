@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Button } from "@/components/ui/button";
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000/api';
+const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
 
 const ActiveAlerts = () => {
   const [alerts, setAlerts] = useState([]);
