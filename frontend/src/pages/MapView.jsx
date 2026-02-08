@@ -10,7 +10,8 @@ import {
   Eye,
   CloudRain,
   AlertCircle,
-  Layers
+  Layers,
+  Globe
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import Map2D from '@/components/maps/Map2D';
 import Map3D from '@/components/maps/Map3D';
-import { 
+import DisasterMap from '@/components/maps/DisasterMap';import { 
   getWeatherByLocation, 
   getAQIByLocation, 
   getRainfallTrends,
@@ -31,6 +32,7 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tool
 
 const MapView = () => {
   const [is3D, setIs3D] = useState(false);
+  const [useGoogleMaps, setUseGoogleMaps] = useState(true); // Toggle between Google Maps and OpenLayers
   const [loading, setLoading] = useState(false);
   const [location, setLocation] = useState('');
   const [center, setCenter] = useState([20.5937, 78.9629]); // Default: India center
@@ -47,6 +49,7 @@ const MapView = () => {
     aqiHeatMap: false, // New: AQI heat map overlay
     rainfall: true,
     cyclone: true,
+    disasters: true, // New: Disaster zones
   });
 
   // Load initial data for default location
@@ -153,15 +156,37 @@ const MapView = () => {
           <p className="text-muted-foreground">Interactive 2D/3D maps with real-time weather, AQI, and cyclone tracking</p>
         </div>
 
-        {/* 2D/3D Toggle */}
-        <div className="flex items-center gap-3 bg-muted px-4 py-2 rounded-full">
-          <span className={`text-sm font-medium ${!is3D ? 'text-primary' : 'text-muted-foreground'}`}>2D Map</span>
-          <Switch 
-            checked={is3D} 
-            onCheckedChange={setIs3D}
-            data-testid="map-toggle-switch"
-          />
-          <span className={`text-sm font-medium ${is3D ? 'text-primary' : 'text-muted-foreground'}`}>3D Map</span>
+        {/* Map Type Switcher */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant={useGoogleMaps ? "default" : "outline"}
+            size="sm"
+            onClick={() => setUseGoogleMaps(true)}
+            className="gap-2"
+          >
+            <Globe className="w-4 h-4" />
+            Disaster Map
+          </Button>
+          <Button
+            variant={!useGoogleMaps && !is3D ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              setUseGoogleMaps(false);
+              setIs3D(false);
+            }}
+          >
+            2D OpenLayers
+          </Button>
+          <Button
+            variant={!useGoogleMaps && is3D ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              setUseGoogleMaps(false);
+              setIs3D(true);
+            }}
+          >
+            3D Cesium
+          </Button>
         </div>
       </div>
 
@@ -207,7 +232,17 @@ const MapView = () => {
           )}
           
           <AnimatePresence mode="wait">
-            {!is3D ? (
+            {useGoogleMaps ? (
+              <motion.div
+                key="google-map"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="h-full w-full"
+              >
+                <DisasterMap center={center} />
+              </motion.div>
+            ) : !is3D ? (
               <motion.div
                 key="2d-map"
                 initial={{ opacity: 0 }}
