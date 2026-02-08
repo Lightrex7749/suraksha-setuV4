@@ -8,7 +8,7 @@ import { useLocation } from '@/contexts/LocationContext';
 import { toast } from 'sonner';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || 'AIzaSyBRYE9Q6Y9Q9Q9Q9Q9Q9Q9Q9Q9Q9Q9Q9Q'; // Demo key
 
 const mapContainerStyle = {

@@ -19,7 +19,7 @@ export const LocationProvider = ({ children }) => {
   const [alerts, setAlerts] = useState([]);
 
   // Initialize WebSocket for real-time alerts
-  const wsUrl = (process.env.REACT_APP_API_URL || 'http://localhost:8000').replace('http://', 'ws://').replace('https://', 'wss://') + '/api/ws/alerts';
+  const wsUrl = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000').replace('http://', 'ws://').replace('https://', 'wss://') + '/api/ws/alerts';
   
   const {
     isConnected: wsConnected,
@@ -118,7 +118,7 @@ export const LocationProvider = ({ children }) => {
 
   const detectLocationByIP = async () => {
     try {
-      const response = await axios.get(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/location/current`);
+      const response = await axios.get(`${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/current`);
       const locationData = {
         latitude: response.data.lat,
         longitude: response.data.lon,
@@ -141,7 +141,7 @@ export const LocationProvider = ({ children }) => {
     setLoading(true);
     try {
       const response = await axios.post(
-        `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/location/update`,
+        `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/update`,
         { latitude, longitude, enable_alerts: true, alert_severity: ['warning', 'critical'] }
       );
       
@@ -168,7 +168,7 @@ export const LocationProvider = ({ children }) => {
     try {
       // First validate the PIN code
       const validateResponse = await axios.post(
-        `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/location/validate-pincode`,
+        `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/validate-pincode`,
         { pin_code: pinCode }
       );
 
@@ -178,7 +178,7 @@ export const LocationProvider = ({ children }) => {
 
       // Update location with PIN code
       const updateResponse = await axios.post(
-        `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/location/update`,
+        `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/update`,
         {
           pin_code: pinCode,
           enable_alerts: true,
@@ -208,7 +208,7 @@ export const LocationProvider = ({ children }) => {
   const fetchNearbyAlerts = async (latitude, longitude, radiusKm = 50) => {
     try {
       const response = await axios.get(
-        `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/location/nearby-alerts`,
+        `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/nearby-alerts`,
         { params: { lat: latitude, lon: longitude, radius_km: radiusKm } }
       );
       setAlerts(response.data.alerts || []);
