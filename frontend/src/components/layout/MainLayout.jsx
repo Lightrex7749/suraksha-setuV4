@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
+import { Link, useLocation, Outlet } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Map, 
@@ -13,8 +13,7 @@ import {
   Menu,
   X,
   Search,
-  UserCircle,
-  LogOut
+  UserCircle
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,15 +39,9 @@ const SidebarItem = ({ icon: Icon, label, path, active, collapsed }) => (
 
 const MainLayout = () => {
   const location = useLocation();
-  const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
 
   const getInitials = (name) => {
     if (!name) return 'U';
@@ -66,15 +59,15 @@ const MainLayout = () => {
   };
 
   const navItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: Map, label: 'Live Map', path: '/map' },
-    { icon: Bell, label: 'Alerts Center', path: '/alerts' },
-    { icon: CloudRain, label: 'Weather & AQI', path: '/weather' },
-    { icon: Flame, label: 'Disasters', path: '/disasters' },
-    { icon: Users, label: 'Community', path: '/community' },
-    { icon: GraduationCap, label: 'Student Portal', path: '/student' },
-    { icon: Microscope, label: 'Scientist Portal', path: '/scientist' },
-    { icon: ShieldAlert, label: 'Admin', path: '/admin' },
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/app/dashboard' },
+    { icon: Map, label: 'Live Map', path: '/app/map' },
+    { icon: Bell, label: 'Alerts Center', path: '/app/alerts' },
+    { icon: CloudRain, label: 'Weather & AQI', path: '/app/weather' },
+    { icon: Flame, label: 'Disasters', path: '/app/disasters' },
+    { icon: Users, label: 'Community', path: '/app/community' },
+    { icon: GraduationCap, label: 'Student Portal', path: '/app/student' },
+    { icon: Microscope, label: 'Scientist Portal', path: '/app/scientist' },
+    { icon: ShieldAlert, label: 'Admin', path: '/app/admin' },
   ];
 
   return (
@@ -132,30 +125,14 @@ const MainLayout = () => {
                 </Avatar>
                 <div className="flex flex-col flex-1 min-w-0">
                   <span className="text-sm font-medium truncate">{user?.name || 'User'}</span>
-                  <span className="text-xs text-muted-foreground">{user ? getUserTypeLabel(user.user_type) : ''}</span>
+                  <span className="text-xs text-muted-foreground">{user ? getUserTypeLabel(user.user_type) : 'Citizen'}</span>
                 </div>
               </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
-                onClick={handleLogout}
-                data-testid="logout-button"
-              >
-                <LogOut className="h-4 w-4" />
-                Logout
-              </Button>
             </div>
           ) : (
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="w-full"
-              onClick={handleLogout}
-              data-testid="logout-button-collapsed"
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
+            <div className="text-center text-xs text-muted-foreground">
+              {user?.name?.charAt(0) || 'U'}
+            </div>
           )}
         </div>
       </aside>

@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001/api';
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000/api';
 
 // Debug logging
 console.log('Chatbot - REACT_APP_BACKEND_URL:', process.env.REACT_APP_BACKEND_URL);

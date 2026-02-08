@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Wind, 
@@ -9,13 +9,237 @@ import {
   MapPin, 
   Shield, 
   Navigation,
-  Waves
+  Waves,
+  Loader,
+  MapPinOff
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from '@/hooks/use-toast';
+
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
+// Helper function to calculate distance between two coordinates using Haversine formula
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+};
+
+// Disaster coordinates (approximate)
+const DISASTER_COORDINATES = {
+  'Odisha Coast': { lat: 19.8135, lon: 85.7595 },
+  'Cuttack': { lat: 20.4625, lon: 85.8830 },
+  'Bhubaneswar': { lat: 20.2961, lon: 85.8245 },
+  'Kerala': { lat: 10.8505, lon: 76.2711 },
+  'Mumbai': { lat: 19.0760, lon: 72.8777 },
+  'Bangalore': { lat: 12.9716, lon: 77.5946 },
+  'Chennai': { lat: 13.0827, lon: 80.2707 },
+  'Kolkata': { lat: 22.5726, lon: 88.3639 },
+  'Delhi': { lat: 28.7041, lon: 77.1025 },
+  'Gujarat': { lat: 22.2587, lon: 71.1924 }
+};
+
+const NearbyDisastersView = () => {
+  const [userLocation, setUserLocation] = useState(null);
+  const [nearbyDisasters, setNearbyDisasters] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    fetchNearbyDisasters();
+  }, []);
+
+  const fetchNearbyDisasters = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Get user location
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+          setError('Geolocation not supported. Using default location.');
+          loadDefaultLocation();
+          resolve();
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const { latitude, longitude } = position.coords;
+            setUserLocation({ lat: latitude, lon: longitude });
+
+            try {
+              // Fetch disasters from backend
+              const response = await fetch(`${API_URL}/api/disasters`);
+              if (!response.ok) throw new Error('Failed to fetch disasters');
+
+              const data = await response.json();
+              const disasters = data.disasters || [];
+
+              // Calculate distances and sort
+              const disastersWithDistance = disasters.map(disaster => {
+                const coords = DISASTER_COORDINATES[disaster.location] || 
+                              DISASTER_COORDINATES['Delhi']; // fallback
+                const distance = calculateDistance(
+                  latitude, 
+                  longitude, 
+                  coords.lat, 
+                  coords.lon
+                );
+                return { ...disaster, distance };
+              }).sort((a, b) => a.distance - b.distance).slice(0, 10);
+
+              setNearbyDisasters(disastersWithDistance);
+            } catch (err) {
+              console.error('Error fetching disasters:', err);
+              setError('Failed to load nearby disasters.');
+            }
+            resolve();
+          },
+          (err) => {
+            console.error('Geolocation error:', err);
+            setError('Unable to access location. Using default location.');
+            loadDefaultLocation();
+            resolve();
+          }
+        );
+      });
+    } catch (err) {
+      console.error('Error in fetchNearbyDisasters:', err);
+      setError('An error occurred while fetching nearby disasters.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadDefaultLocation = async () => {
+    try {
+      setUserLocation({ lat: 28.7041, lon: 77.1025, city: 'Delhi' }); // Delhi default
+      const response = await fetch(`${API_URL}/api/disasters`);
+      if (response.ok) {
+        const data = await response.json();
+        const disasters = (data.disasters || [])
+          .map(disaster => {
+            const coords = DISASTER_COORDINATES[disaster.location] || 
+                          DISASTER_COORDINATES['Delhi'];
+            const distance = calculateDistance(28.7041, 77.1025, coords.lat, coords.lon);
+            return { ...disaster, distance };
+          })
+          .sort((a, b) => a.distance - b.distance)
+          .slice(0, 10);
+        setNearbyDisasters(disasters);
+      }
+    } catch (err) {
+      console.error('Error loading default location:', err);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader className="w-6 h-6 animate-spin text-primary mr-2" />
+        <p>Fetching your location and nearby disasters...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {error && (
+        <Card className="border-orange-500/50 bg-orange-500/5">
+          <CardContent className="pt-6">
+            <p className="text-sm text-orange-600">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {userLocation && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Navigation className="w-5 h-5" />
+              Your Location
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-primary" />
+              <p>Latitude: {userLocation.lat?.toFixed(4)}, Longitude: {userLocation.lon?.toFixed(4)}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div>
+        <h3 className="text-lg font-semibold mb-4">Nearest Disasters to Your Location</h3>
+        <div className="space-y-3">
+          {nearbyDisasters.length === 0 ? (
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <MapPinOff className="w-12 h-12 mx-auto text-muted-foreground mb-2 opacity-50" />
+                <p className="text-muted-foreground">No nearby disasters found.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            nearbyDisasters.map((disaster, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.05 }}
+              >
+                <Card className="hover:shadow-md transition-shadow">
+                  <CardContent className="pt-6">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <h4 className="font-semibold">{disaster.title || disaster.disaster_type}</h4>
+                        <p className="text-sm text-muted-foreground">{disaster.location}</p>
+                      </div>
+                      <Badge variant="secondary" className="flex items-center gap-1">
+                        <Navigation className="w-3 h-3" />
+                        {disaster.distance} km away
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-3">{disaster.description}</p>
+                    <div className="flex items-center gap-4 text-xs">
+                      <span className="text-muted-foreground">{disaster.date || new Date().toLocaleDateString()}</span>
+                      {disaster.casualties && (
+                        <span className="font-medium text-destructive">Casualties: {disaster.casualties}</span>
+                      )}
+                      {disaster.affected_area && (
+                        <span className="text-muted-foreground">Area: {disaster.affected_area}</span>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <Button 
+        variant="outline" 
+        className="w-full"
+        onClick={fetchNearbyDisasters}
+      >
+        <Navigation className="w-4 h-4 mr-2" />
+        Refresh Location & Nearby Disasters
+      </Button>
+    </div>
+  );
+};
 
 const DisasterCard = ({ title, value, subtext, icon: Icon, color }) => (
   <Card>
@@ -231,14 +455,21 @@ const Disasters = () => {
         </div>
       </div>
 
-      <Tabs defaultValue="cyclone" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 lg:w-[400px] mb-6">
+      <Tabs defaultValue="nearby" className="w-full">
+        <TabsList className="grid w-full grid-cols-5 lg:w-[500px] mb-6">
+          <TabsTrigger value="nearby" className="flex items-center gap-1">
+            <MapPin className="w-4 h-4" />
+            <span className="hidden sm:inline">Nearby</span>
+          </TabsTrigger>
           <TabsTrigger value="cyclone">Cyclone</TabsTrigger>
           <TabsTrigger value="flood">Flood</TabsTrigger>
           <TabsTrigger value="earthquake">Quake</TabsTrigger>
           <TabsTrigger value="heat">Heat</TabsTrigger>
         </TabsList>
         
+        <TabsContent value="nearby">
+          <NearbyDisastersView />
+        </TabsContent>
         <TabsContent value="cyclone">
           <CycloneView />
         </TabsContent>

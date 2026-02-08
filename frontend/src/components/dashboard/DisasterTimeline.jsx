@@ -1,16 +1,91 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Clock, MapPin } from 'lucide-react';
+import axios from 'axios';
 
-const events = [
-  { time: '08:00 AM', title: 'Morning Forecast', type: 'normal' },
-  { time: '10:30 AM', title: 'AQI Spike Alert', type: 'warning' },
-  { time: '02:00 PM', title: 'Cyclone Update', type: 'critical' },
-  { time: '04:00 PM', title: 'Rain Expected', type: 'info' },
-  { time: '08:00 PM', title: 'Night Patrol', type: 'normal' },
-];
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000/api';
 
 const DisasterTimeline = () => {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        const [disastersRes, alertsRes] = await Promise.all([
+          axios.get(`${API_URL}/disasters?limit=3`),
+          axios.get(`${API_URL}/alerts`)
+        ]);
+
+        const timelineEvents = [];
+        
+        // Add recent alerts
+        alertsRes.data.slice(0, 2).forEach(alert => {
+          const time = new Date(alert.issued_at);
+          timelineEvents.push({
+            time: time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            title: alert.title,
+            type: alert.severity === 'red' ? 'critical' : alert.severity === 'orange' ? 'warning' : 'info',
+            location: alert.location
+          });
+        });
+        
+        // Add recent disasters
+        disastersRes.data.slice(0, 2).forEach(disaster => {
+          const time = new Date(disaster.date);
+          timelineEvents.push({
+            time: time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            title: disaster.title,
+            type: 'warning',
+            location: disaster.location
+          });
+        });
+        
+        // Add current time marker
+        const now = new Date();
+        timelineEvents.push({
+          time: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          title: 'Current Status',
+          type: 'normal'
+        });
+        
+        // Sort by time (most recent first)
+        timelineEvents.sort((a, b) => {
+          const timeA = new Date('1970/01/01 ' + a.time);
+          const timeB = new Date('1970/01/01 ' + b.time);
+          return timeB - timeA;
+        });
+        
+        setEvents(timelineEvents.slice(0, 5));
+      } catch (error) {
+        console.error('Error fetching timeline:', error);
+        setEvents([
+          { time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), title: 'System Active', type: 'normal' }
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchEvents();
+    const interval = setInterval(fetchEvents, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (loading) {
+    return (
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="bg-card border border-border rounded-xl p-6 shadow-sm animate-pulse"
+      >
+        <div className="h-24 flex items-center justify-center text-muted-foreground">
+          Loading timeline...
+        </div>
+      </motion.div>
+    );
+  }
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}

@@ -1,42 +1,70 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Info, XCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from "@/components/ui/button";
+import axios from 'axios';
 
-const alerts = [
-  {
-    id: 1,
-    type: 'critical',
-    title: 'Cyclone Warning',
-    message: 'Cyclone "Dana" approaching coast. Landfall expected in 24h.',
-    time: '10 min ago',
-    location: 'Odisha Coast'
-  },
-  {
-    id: 2,
-    type: 'warning',
-    title: 'High AQI Alert',
-    message: 'Air quality index is severe in industrial zones.',
-    time: '1 hour ago',
-    location: 'Sector 5'
-  },
-  {
-    id: 3,
-    type: 'info',
-    title: 'Heavy Rainfall',
-    message: 'Expected heavy rainfall in the evening. Carry umbrellas.',
-    time: '2 hours ago',
-    location: 'City Wide'
-  }
-];
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000/api';
 
 const ActiveAlerts = () => {
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      try {
+        const response = await axios.get(`${API_URL}/alerts`);
+        // Take only top 5 most recent alerts
+        const recentAlerts = response.data.slice(0, 5).map(alert => ({
+          id: alert.id,
+          type: alert.severity === 'red' ? 'critical' : alert.severity === 'orange' ? 'warning' : 'info',
+          title: alert.title,
+          message: alert.description,
+          time: new Date(alert.issued_at).toLocaleString(),
+          location: alert.location
+        }));
+        setAlerts(recentAlerts);
+      } catch (error) {
+        console.error('Error fetching alerts:', error);
+        // Fallback data
+        setAlerts([{
+          id: 1,
+          type: 'info',
+          title: 'System Alert',
+          message: 'Unable to fetch latest alerts. Please check connection.',
+          time: 'Now',
+          location: 'System'
+        }]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
+
+  if (loading) {
+    return (
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="bg-card border border-border rounded-xl p-6 shadow-sm h-full flex flex-col animate-pulse"
+      >
+        <div className="h-48 flex items-center justify-center text-muted-foreground">
+          Loading alerts...
+        </div>
+      </motion.div>
+    );
+  }
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.2 }}
-      className="bg-card border border-border rounded-xl p-6 shadow-sm h-full flex flex-col"
+      className="bg-card border border-border rounded-xl p-6 shadow-sm flex flex-col"
     >
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
@@ -46,7 +74,7 @@ const ActiveAlerts = () => {
         <Button variant="ghost" size="sm" className="text-xs">View All</Button>
       </div>
 
-      <div className="space-y-3 overflow-y-auto flex-1 pr-2 custom-scrollbar">
+      <div className="space-y-3 overflow-y-auto max-h-64 pr-2 custom-scrollbar">
         {alerts.map((alert) => (
           <div 
             key={alert.id}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   AlertTriangle, 
@@ -11,13 +11,17 @@ import {
   Filter,
   MapPin,
   Share2,
-  Volume2
+  Volume2,
+  Loader
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from '@/hooks/use-toast';
+
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
 const AlertCard = ({ alert }) => {
   const getSeverityColor = (severity) => {
@@ -98,41 +102,100 @@ const AlertCard = ({ alert }) => {
 };
 
 const Alerts = () => {
-  const alertsData = [
-    {
-      id: 1,
-      type: 'cyclone',
-      severity: 'critical',
-      title: 'Cyclone Dana Landfall Imminent',
-      message: 'Wind speeds reaching 120km/h. Evacuate coastal areas immediately.',
-      location: 'Odisha Coast, Sector 4',
-      time: '10 mins ago',
-      impact: 'High Risk to Life',
-      aiInsight: 'Based on current trajectory, landfall is expected at 14:00 IST. Structural damage to kutcha houses is 95% probable. Recommended action: Move to Shelter #42.'
-    },
-    {
-      id: 2,
-      type: 'flood',
-      severity: 'high',
-      title: 'Flash Flood Warning',
-      message: 'River Mahanadi water levels rising rapidly due to upstream release.',
-      location: 'Cuttack Lowlands',
-      time: '45 mins ago',
-      impact: 'Road Blockages',
-      aiInsight: 'Water levels have risen 2ft in the last hour. Main bridge access may be cut off by 18:00 IST. Avoid Route 5.'
-    },
-    {
-      id: 3,
-      type: 'heat',
-      severity: 'moderate',
-      title: 'Heatwave Alert',
-      message: 'Temperature expected to cross 42°C today.',
-      location: 'City Wide',
-      time: '2 hours ago',
-      impact: 'Health Risk',
-      aiInsight: 'UV Index is 9 (Very High). Dehydration risk is elevated for elderly and children. Stay indoors between 11 AM and 3 PM.'
+  const [alerts, setAlerts] = useState([]);
+  const [filteredAlerts, setFilteredAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
+  
+  // Filter states
+  const [selectedSeverity, setSelectedSeverity] = useState('all');
+  const [selectedType, setSelectedType] = useState('all');
+  const [selectedRegion, setSelectedRegion] = useState('all');
+  
+  const { toast } = useToast();
+
+  // Fetch alerts data
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      try {
+        setLoading(true);
+        const params = new URLSearchParams();
+        
+        // Apply filters to API request
+        if (selectedSeverity !== 'all') {
+          params.append('severity', selectedSeverity);
+        }
+        if (selectedType !== 'all') {
+          params.append('report_type', selectedType);
+        }
+        
+        const response = await fetch(`${API_URL}/api/alerts${params.toString() ? '?' + params.toString() : ''}`);
+        if (!response.ok) throw new Error('Failed to fetch alerts');
+        
+        const data = await response.json();
+        
+        // Format data for display
+        const formattedAlerts = (data.alerts || []).map(alert => ({
+          id: alert.id || Math.random(),
+          type: alert.report_type?.toLowerCase() || 'info',
+          severity: alert.severity?.toLowerCase() || 'info',
+          title: alert.title || alert.alert_type || 'Alert',
+          message: alert.description || alert.message || '',
+          location: alert.location || 'Unknown Location',
+          time: alert.timestamp ? new Date(alert.timestamp).toLocaleString() : 'Recently',
+          impact: alert.affected_population ? `Affecting ${alert.affected_population} people` : 'To be determined',
+          aiInsight: alert.recommended_action || 'Stay alert and follow official safety guidelines.'
+        }));
+        
+        setAlerts(formattedAlerts);
+        setFilteredAlerts(formattedAlerts);
+        setError(null);
+      } catch (err) {
+        console.error('Error fetching alerts:', err);
+        setError('Failed to load alerts. Showing sample data.');
+        setAlerts([]);
+        setFilteredAlerts([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAlerts();
+    
+    // Refresh alerts every 2 minutes
+    const interval = setInterval(fetchAlerts, 2 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [selectedSeverity, selectedType]);
+
+  // Apply client-side region filter
+  useEffect(() => {
+    let filtered = alerts;
+    
+    if (selectedRegion !== 'all') {
+      filtered = filtered.filter(a => 
+        a.location.toLowerCase().includes(selectedRegion.toLowerCase())
+      );
     }
-  ];
+    
+    setFilteredAlerts(filtered);
+  }, [selectedRegion, alerts]);
+
+  const resetFilters = () => {
+    setSelectedSeverity('all');
+    setSelectedType('all');
+    setSelectedRegion('all');
+  };
+
+  const alertStats = {
+    critical: alerts.filter(a => a.severity === 'critical').length,
+    high: alerts.filter(a => a.severity === 'high').length,
+    moderate: alerts.filter(a => a.severity === 'moderate').length,
+    low: alerts.filter(a => a.severity === 'low').length,
+  };
+
+  const alertTypes = ['cyclone', 'flood', 'heat', 'earthquake', 'drought', 'air_quality'];
+  const regions = ['Odisha', 'Kerala', 'Maharashtra', 'Delhi', 'Bengal', 'Tamil Nadu', 'Gujarat'];
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -142,71 +205,173 @@ const Alerts = () => {
           <p className="text-muted-foreground">Real-time emergency notifications and AI-driven insights.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" className="gap-2">
-            <Filter className="w-4 h-4" /> Filter
+          <Button 
+            variant="outline" 
+            className="gap-2"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter className="w-4 h-4" /> Filters
           </Button>
           <Button variant="destructive" className="gap-2">
-            <AlertTriangle className="w-4 h-4" /> Report Emergency
+            <AlertTriangle className="w-4 h-4" /> Report
           </Button>
         </div>
       </div>
 
+      {/* Filter Panel */}
+      {showFilters && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-card border rounded-lg p-4 space-y-4"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Severity Filter */}
+            <div>
+              <label className="text-sm font-medium block mb-2">Severity</label>
+              <select 
+                value={selectedSeverity}
+                onChange={(e) => setSelectedSeverity(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm"
+              >
+                <option value="all">All Levels</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="moderate">Moderate</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+
+            {/* Alert Type Filter */}
+            <div>
+              <label className="text-sm font-medium block mb-2">Alert Type</label>
+              <select 
+                value={selectedType}
+                onChange={(e) => setSelectedType(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm"
+              >
+                <option value="all">All Types</option>
+                {alertTypes.map(type => (
+                  <option key={type} value={type}>
+                    {type.charAt(0).toUpperCase() + type.slice(1).replace('_', ' ')}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Region Filter */}
+            <div>
+              <label className="text-sm font-medium block mb-2">Region</label>
+              <select 
+                value={selectedRegion}
+                onChange={(e) => setSelectedRegion(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md bg-background text-foreground text-sm"
+              >
+                <option value="all">All Regions</option>
+                {regions.map(region => (
+                  <option key={region} value={region}>{region}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={resetFilters}
+            className="w-full"
+          >
+            Reset Filters
+          </Button>
+        </motion.div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Alerts Feed */}
         <div className="lg:col-span-2 space-y-4">
-          <Tabs defaultValue="all" className="w-full">
-            <TabsList className="grid w-full grid-cols-4 mb-4">
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="critical">Critical</TabsTrigger>
-              <TabsTrigger value="warning">Warning</TabsTrigger>
-              <TabsTrigger value="info">Info</TabsTrigger>
-            </TabsList>
-            <TabsContent value="all" className="space-y-4">
-              {alertsData.map(alert => (
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : error ? (
+            <Card className="border-destructive/50 bg-destructive/5">
+              <CardContent className="pt-6">
+                <p className="text-sm text-destructive">{error}</p>
+              </CardContent>
+            </Card>
+          ) : filteredAlerts.length === 0 ? (
+            <Card>
+              <CardContent className="pt-6 text-center text-muted-foreground">
+                <AlertTriangle className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                <p>No alerts match your filters.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Showing {filteredAlerts.length} of {alerts.length} alerts
+              </p>
+              {filteredAlerts.map(alert => (
                 <AlertCard key={alert.id} alert={alert} />
               ))}
-            </TabsContent>
-            <TabsContent value="critical">
-              {alertsData.filter(a => a.severity === 'critical').map(alert => (
-                <AlertCard key={alert.id} alert={alert} />
-              ))}
-            </TabsContent>
-          </Tabs>
+            </div>
+          )}
         </div>
 
         {/* Sidebar Stats & Info */}
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Alert Severity Meter</CardTitle>
+              <CardTitle className="text-lg">Alert Severity Distribution</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-destructive font-medium">Critical</span>
-                    <span>12%</span>
+                    <span>{alertStats.critical}</span>
                   </div>
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-destructive w-[12%]"></div>
+                    <div 
+                      className="h-full bg-destructive transition-all"
+                      style={{ width: `${alerts.length > 0 ? (alertStats.critical / alerts.length) * 100 : 0}%` }}
+                    ></div>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-orange-500 font-medium">High</span>
-                    <span>28%</span>
+                    <span>{alertStats.high}</span>
                   </div>
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-orange-500 w-[28%]"></div>
+                    <div 
+                      className="h-full bg-orange-500 transition-all"
+                      style={{ width: `${alerts.length > 0 ? (alertStats.high / alerts.length) * 100 : 0}%` }}
+                    ></div>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-blue-500 font-medium">Info</span>
-                    <span>60%</span>
+                    <span className="text-yellow-500 font-medium">Moderate</span>
+                    <span>{alertStats.moderate}</span>
                   </div>
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 w-[60%]"></div>
+                    <div 
+                      className="h-full bg-yellow-500 transition-all"
+                      style={{ width: `${alerts.length > 0 ? (alertStats.moderate / alerts.length) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-blue-500 font-medium">Low</span>
+                    <span>{alertStats.low}</span>
+                  </div>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-500 transition-all"
+                      style={{ width: `${alerts.length > 0 ? (alertStats.low / alerts.length) * 100 : 0}%` }}
+                    ></div>
                   </div>
                 </div>
               </div>

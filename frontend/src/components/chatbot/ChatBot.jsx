@@ -10,7 +10,7 @@ import axios from 'axios';
 import ChatMessage from './ChatMessage';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
 // Debug logging
 console.log('ChatBot - REACT_APP_BACKEND_URL:', process.env.REACT_APP_BACKEND_URL);

@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Users, Home, Zap, Activity } from 'lucide-react';
+import axios from 'axios';
 
-const StatCard = ({ icon: Icon, label, value, subtext, color }) => (
-  <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000/api';
+
+const StatCard = ({ icon: Icon, label, value, subtext, color, loading }) => (
+  <div className={`bg-card border border-border rounded-xl p-4 flex items-center gap-4 ${loading ? 'animate-pulse' : ''}`}>
     <div className={`p-3 rounded-lg ${color} bg-opacity-10`}>
       <Icon className={`w-6 h-6 ${color.replace('bg-', 'text-')}`} />
     </div>
@@ -16,6 +19,59 @@ const StatCard = ({ icon: Icon, label, value, subtext, color }) => (
 );
 
 const ImpactStats = () => {
+  const [stats, setStats] = useState({
+    affectedPeople: 0,
+    sheltersActive: 0,
+    disasters: 0,
+    alerts: 0
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const [disastersRes, alertsRes, sheltersRes] = await Promise.all([
+          axios.get(`${API_URL}/disasters?limit=100`),
+          axios.get(`${API_URL}/alerts`),
+          axios.get(`${API_URL}/evacuation-centers`)
+        ]);
+
+        const disasters = disastersRes.data;
+        const alerts = alertsRes.data;
+        const shelters = sheltersRes.data;
+
+        // Calculate affected people from recent disasters
+        const recentDisasters = disasters.filter(d => {
+          const disasterDate = new Date(d.date);
+          const daysSince = (Date.now() - disasterDate) / (1000 * 60 * 60 * 24);
+          return daysSince <= 30; // Last 30 days
+        });
+        const affectedPeople = recentDisasters.reduce((sum, d) => sum + (d.affected_population || 0), 0);
+
+        // Count active shelters
+        const activeShelters = shelters.filter(s => s.status === 'active').length;
+
+        // Count active alerts
+        const activeAlerts = alerts.length;
+
+        setStats({
+          affectedPeople,
+          sheltersActive: activeShelters,
+          disasters: recentDisasters.length,
+          alerts: activeAlerts
+        });
+      } catch (error) {
+        console.error('Error fetching stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+    const interval = setInterval(fetchStats, 300000); // Update every 5 minutes
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -26,30 +82,34 @@ const ImpactStats = () => {
       <StatCard 
         icon={Users} 
         label="Affected People" 
-        value="1,240" 
-        subtext="In flood prone zones"
+        value={stats.affectedPeople.toLocaleString()} 
+        subtext="Last 30 days"
         color="bg-orange-500"
+        loading={loading}
       />
       <StatCard 
         icon={Home} 
         label="Shelters Active" 
-        value="12" 
-        subtext="Capacity: 85%"
+        value={stats.sheltersActive.toString()} 
+        subtext="Available now"
         color="bg-green-500"
+        loading={loading}
       />
       <StatCard 
         icon={Zap} 
-        label="Power Outages" 
-        value="3" 
-        subtext="Restoration in 2h"
+        label="Recent Disasters" 
+        value={stats.disasters.toString()} 
+        subtext="Last 30 days"
         color="bg-yellow-500"
+        loading={loading}
       />
       <StatCard 
         icon={Activity} 
-        label="Emergency Calls" 
-        value="45" 
-        subtext="Last 24 hours"
+        label="Active Alerts" 
+        value={stats.alerts.toString()} 
+        subtext="Current warnings"
         color="bg-red-500"
+        loading={loading}
       />
     </motion.div>
   );

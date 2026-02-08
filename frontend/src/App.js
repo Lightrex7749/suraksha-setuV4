@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import MainLayout from "@/components/layout/MainLayout";
+import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import MapView from "@/pages/MapView";
 import Alerts from "@/pages/Alerts";
@@ -11,19 +12,18 @@ import Community from "@/pages/Community";
 import StudentPortal from "@/pages/StudentPortal";
 import ScientistPortal from "@/pages/ScientistPortal";
 import AdminDashboard from "@/pages/AdminDashboard";
-import Login from "@/pages/Login";
-import Register from "@/pages/Register";
 
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+          {/* Landing Page */}
+          <Route path="/" element={<Landing />} />
           
-          <Route path="/" element={<MainLayout />}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
+          {/* All Routes Accessible Without Auth */}
+          <Route path="/app" element={<MainLayout />}>
+            <Route index element={<Navigate to="/app/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="map" element={<MapView />} />
             <Route path="alerts" element={<Alerts />} />
@@ -34,6 +34,13 @@ function App() {
             <Route path="scientist" element={<ScientistPortal />} />
             <Route path="admin" element={<AdminDashboard />} />
           </Route>
+
+          {/* Redirect login/register to dashboard */}
+          <Route path="/login" element={<Navigate to="/app/dashboard" replace />} />
+          <Route path="/register" element={<Navigate to="/app/dashboard" replace />} />
+          
+          {/* Catch all - redirect to dashboard */}
+          <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

@@ -17,13 +17,29 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     // Load user and token from localStorage on mount
-    const storedToken = localStorage.getItem('auth_token');
-    const storedUser = localStorage.getItem('auth_user');
+    let storedToken = localStorage.getItem('auth_token');
+    let storedUser = localStorage.getItem('auth_user');
     
-    if (storedToken && storedUser) {
+    // Auto-authenticate if no user is logged in
+    if (!storedToken || !storedUser) {
+      const demoUser = {
+        id: 'demo_user',
+        name: 'Demo User',
+        email: 'demo@suraksha.local',
+        role: 'citizen'
+      };
+      const demoToken = 'demo_token_' + Date.now();
+      
+      localStorage.setItem('auth_token', demoToken);
+      localStorage.setItem('auth_user', JSON.stringify(demoUser));
+      
+      setToken(demoToken);
+      setUser(demoUser);
+    } else {
       setToken(storedToken);
       setUser(JSON.parse(storedUser));
     }
+    
     setLoading(false);
   }, []);
 
@@ -35,10 +51,19 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
-    setToken(null);
-    setUser(null);
+    // Don't actually logout - just reset to demo user for this demo
+    const demoUser = {
+      id: 'demo_user',
+      name: 'Demo User',
+      email: 'demo@suraksha.local',
+      role: 'citizen'
+    };
+    const demoToken = 'demo_token_' + Date.now();
+    
+    localStorage.setItem('auth_token', demoToken);
+    localStorage.setItem('auth_user', JSON.stringify(demoUser));
+    setToken(demoToken);
+    setUser(demoUser);
   };
 
   const value = {
@@ -47,7 +72,7 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     loading,
-    isAuthenticated: !!token
+    isAuthenticated: true  // Always authenticated
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
