@@ -18,6 +18,9 @@ import httpx
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 import asyncio
+from pywebpush import webpush, WebPushException
+from py_vapid import Vapid
+from cryptography.hazmat.primitives import serialization
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -27,7 +30,8 @@ in_memory_db = {
     "users": {},
     "chat_messages": [],
     "community_reports": [],
-    "status_checks": []
+    "status_checks": [],
+    "push_subscriptions": []  # Store push notification subscriptions
 }
 
 # MongoDB connection (optional - for future use)
@@ -203,6 +207,121 @@ class ConnectionManager:
 
 # Initialize WebSocket manager
 ws_manager = ConnectionManager()
+
+# ==================== PUSH NOTIFICATION SETUP ====================
+
+# VAPID keys for Web Push (generate once and store in .env for production)
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY')
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY')
+VAPID_CLAIMS_EMAIL = os.environ.get('VAPID_CLAIMS_EMAIL', 'mailto:admin@surakshasetu.com')
+
+# Generate VAPID keys if not in environment
+if not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
+    logging.warning("VAPID keys not found in environment. Generating new keys...")
+    vapid = Vapid()
+    vapid.generate_keys()
+    VAPID_PRIVATE_KEY = vapid.private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    ).decode('utf-8')
+    VAPID_PUBLIC_KEY = vapid.public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode('utf-8')
+    logging.info("Generated new VAPID keys. Add these to your .env file:")
+    logging.info(f"VAPID_PUBLIC_KEY={VAPID_PUBLIC_KEY}")
+    # Note: In production, you should save these keys and reuse them
+
+# Push notification manager
+class PushNotificationManager:
+    """Manages push notification subscriptions and sending"""
+    
+    def __init__(self):
+        self.subscriptions = in_memory_db["push_subscriptions"]
+    
+    def add_subscription(self, subscription_info: Dict[str, Any]) -> bool:
+        """Add a new push subscription"""
+        try:
+            # Check if subscription already exists
+            endpoint = subscription_info.get('endpoint')
+            for sub in self.subscriptions:
+                if sub.get('endpoint') == endpoint:
+                    logging.info(f"Subscription already exists: {endpoint}")
+                    return True
+            
+            # Add new subscription
+            self.subscriptions.append({
+                **subscription_info,
+                'created_at': datetime.now(timezone.utc).isoformat()
+            })
+            logging.info(f"Added push subscription: {endpoint}")
+            return True
+        except Exception as e:
+            logging.error(f"Error adding subscription: {str(e)}")
+            return False
+    
+    def remove_subscription(self, subscription_info: Dict[str, Any]) -> bool:
+        """Remove a push subscription"""
+        try:
+            endpoint = subscription_info.get('endpoint')
+            self.subscriptions[:] = [s for s in self.subscriptions if s.get('endpoint') != endpoint]
+            logging.info(f"Removed push subscription: {endpoint}")
+            return True
+        except Exception as e:
+            logging.error(f"Error removing subscription: {str(e)}")
+            return False
+    
+    async def send_notification(
+        self, 
+        subscription_info: Dict[str, Any], 
+        payload: Dict[str, Any]
+    ) -> bool:
+        """Send a push notification to a single subscription"""
+        try:
+            # Convert payload to JSON string
+            payload_json = json.dumps(payload)
+            
+            # Send push notification
+            webpush(
+                subscription_info=subscription_info,
+                data=payload_json,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={
+                    "sub": VAPID_CLAIMS_EMAIL
+                }
+            )
+            logging.info(f"Sent push notification to {subscription_info.get('endpoint')}")
+            return True
+        except WebPushException as e:
+            logging.error(f"Web Push error: {str(e)}")
+            # If subscription is invalid (410 Gone), remove it
+            if e.response and e.response.status_code == 410:
+                self.remove_subscription(subscription_info)
+            return False
+        except Exception as e:
+            logging.error(f"Error sending push notification: {str(e)}")
+            return False
+    
+    async def broadcast_notification(self, payload: Dict[str, Any]) -> int:
+        """Send notification to all subscribed clients"""
+        sent_count = 0
+        failed_endpoints = []
+        
+        for subscription in self.subscriptions[:]:  # Copy list to avoid modification during iteration
+            success = await self.send_notification(subscription, payload)
+            if success:
+                sent_count += 1
+            else:
+                failed_endpoints.append(subscription.get('endpoint'))
+        
+        if failed_endpoints:
+            logging.warning(f"Failed to send to {len(failed_endpoints)} endpoints")
+        
+        return sent_count
+
+# Initialize push notification manager
+push_manager = PushNotificationManager()
 
 # Lifespan handler will be added later after imports
 from contextlib import asynccontextmanager
@@ -2377,7 +2496,7 @@ async def websocket_alerts_endpoint(websocket: WebSocket):
 @api_router.post("/alerts/broadcast")
 async def broadcast_alert(alert: Dict[str, Any]):
     """
-    Broadcast a new alert to all connected WebSocket clients
+    Broadcast a new alert to all connected WebSocket clients AND push notification subscribers
     (For testing and admin use)
     """
     try:
@@ -2390,18 +2509,33 @@ async def broadcast_alert(alert: Dict[str, Any]):
             "broadcast": True
         }
         
-        # Determine if location-based or global
+        # Broadcast via WebSocket
         if "coordinates" in alert and alert["coordinates"]:
             radius_km = alert.get("radius_km", 100)
             await ws_manager.broadcast_location_based(alert_with_meta, radius_km)
         else:
             await ws_manager.broadcast(alert_with_meta, alert_with_meta["id"])
         
+        # Send push notifications
+        push_payload = {
+            "title": alert_with_meta.get("title", "New Alert"),
+            "description": alert_with_meta.get("description", "Disaster alert in your area"),
+            "severity": alert_with_meta.get("severity", "info"),
+            "id": alert_with_meta["id"],
+            "timestamp": alert_with_meta["timestamp"],
+            "type": "new_alert",
+            "coordinates": alert_with_meta.get("coordinates"),
+            "url": f"/alerts/{alert_with_meta['id']}"
+        }
+        
+        push_count = await push_manager.broadcast_notification(push_payload)
+        
         return {
             "success": True,
             "message": "Alert broadcast successfully",
             "alert_id": alert_with_meta["id"],
-            "connections": len(ws_manager.active_connections)
+            "websocket_connections": len(ws_manager.active_connections),
+            "push_notifications_sent": push_count
         }
     except Exception as e:
         logging.error(f"Broadcast alert error: {str(e)}")
@@ -2414,6 +2548,130 @@ async def get_websocket_stats():
     return {
         "status": "ok",
         "stats": stats,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+# ==================== PUSH NOTIFICATION ENDPOINTS ====================
+
+class PushSubscriptionModel(BaseModel):
+    """Push notification subscription model"""
+    subscription: Dict[str, Any]
+
+@api_router.get("/push/vapid-public-key")
+async def get_vapid_public_key():
+    """Get VAPID public key for push notification subscription"""
+    try:
+        # Extract just the base64 key from PEM format
+        public_key_pem = VAPID_PUBLIC_KEY
+        
+        # For web push, we need to return the key in URL-safe base64 format
+        # The frontend will handle the conversion
+        vapid = Vapid()
+        vapid.from_pem(VAPID_PRIVATE_KEY.encode('utf-8'))
+        
+        # Get the public key in the correct format for browser
+        public_key_bytes = vapid.public_key.public_bytes(
+            encoding=serialization.Encoding.X962,
+            format=serialization.PublicFormat.UncompressedPoint
+        )
+        
+        import base64
+        public_key_base64 = base64.urlsafe_b64encode(public_key_bytes).decode('utf-8').rstrip('=')
+        
+        return {
+            "publicKey": public_key_base64,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logging.error(f"Error getting VAPID public key: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get VAPID public key")
+
+@api_router.post("/push/subscribe")
+async def subscribe_to_push(subscription_data: PushSubscriptionModel):
+    """Subscribe to push notifications"""
+    try:
+        subscription = subscription_data.subscription
+        
+        if not subscription or 'endpoint' not in subscription:
+            raise HTTPException(status_code=400, detail="Invalid subscription data")
+        
+        success = push_manager.add_subscription(subscription)
+        
+        if success:
+            return {
+                "success": True,
+                "message": "Successfully subscribed to push notifications",
+                "endpoint": subscription.get('endpoint'),
+                "total_subscriptions": len(push_manager.subscriptions)
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to add subscription")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error subscribing to push: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to subscribe to push notifications")
+
+@api_router.post("/push/unsubscribe")
+async def unsubscribe_from_push(subscription_data: PushSubscriptionModel):
+    """Unsubscribe from push notifications"""
+    try:
+        subscription = subscription_data.subscription
+        
+        if not subscription or 'endpoint' not in subscription:
+            raise HTTPException(status_code=400, detail="Invalid subscription data")
+        
+        success = push_manager.remove_subscription(subscription)
+        
+        return {
+            "success": success,
+            "message": "Successfully unsubscribed from push notifications" if success else "Subscription not found",
+            "total_subscriptions": len(push_manager.subscriptions)
+        }
+    
+    except Exception as e:
+        logging.error(f"Error unsubscribing from push: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to unsubscribe from push notifications")
+
+@api_router.post("/push/send-test")
+async def send_test_push_notification():
+    """Send a test push notification to all subscribers (for testing)"""
+    try:
+        if not push_manager.subscriptions:
+            return {
+                "success": False,
+                "message": "No push subscriptions found",
+                "sent_count": 0
+            }
+        
+        payload = {
+            "title": "🧪 Test Alert - Suraksha Setu",
+            "description": "This is a test notification to verify push notifications are working",
+            "severity": "info",
+            "id": f"test_{datetime.now(timezone.utc).timestamp()}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "type": "new_alert"
+        }
+        
+        sent_count = await push_manager.broadcast_notification(payload)
+        
+        return {
+            "success": True,
+            "message": f"Test notification sent to {sent_count} subscribers",
+            "sent_count": sent_count,
+            "total_subscriptions": len(push_manager.subscriptions)
+        }
+    
+    except Exception as e:
+        logging.error(f"Error sending test push notification: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to send test notification")
+
+@api_router.get("/push/subscriptions/stats")
+async def get_push_subscription_stats():
+    """Get push notification subscription statistics"""
+    return {
+        "total_subscriptions": len(push_manager.subscriptions),
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 

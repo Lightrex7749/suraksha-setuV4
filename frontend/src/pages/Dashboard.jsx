@@ -7,6 +7,7 @@ import DisasterTimeline from '@/components/dashboard/DisasterTimeline';
 import ImpactStats from '@/components/dashboard/ImpactStats';
 import LiveAQIChart from '@/components/dashboard/LiveAQIChart';
 import LocationSelector from '@/components/location/LocationSelector';
+import NotificationSettings from '@/components/notifications/NotificationSettings';
 import { Button } from "@/components/ui/button";
 import { Download, Share2 } from 'lucide-react';
 import axios from 'axios';
@@ -150,6 +151,9 @@ const Dashboard = () => {
         <div className="space-y-6">
           {/* Location Selector */}
           <LocationSelector />
+          
+          {/* Push Notifications */}
+          <NotificationSettings />
           
           {/* AI Recommendations */}
           <div className="bg-card border border-border rounded-xl p-6">
