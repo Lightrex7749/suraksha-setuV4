@@ -22,6 +22,9 @@ from pywebpush import webpush, WebPushException
 from py_vapid import Vapid
 from cryptography.hazmat.primitives import serialization
 
+# Import translation service
+from translation_service import translate_response, SUPPORTED_LANGUAGES, get_translation_service
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -322,6 +325,37 @@ class PushNotificationManager:
 
 # Initialize push notification manager
 push_manager = PushNotificationManager()
+
+# ==================== LANGUAGE HELPER FUNCTIONS ====================
+
+def get_language_from_request(request: Request) -> str:
+    """
+    Extract language preference from request
+    Priority: 1) Query param ?lang=hi, 2) Accept-Language header, 3) Default to 'en'
+    
+    Args:
+        request: FastAPI Request object
+    
+    Returns:
+        Language code (en, hi, ta, te, bn, mr)
+    """
+    # Try query parameter first
+    lang = request.query_params.get('lang', '').lower()
+    if lang in SUPPORTED_LANGUAGES:
+        return lang
+    
+    # Try Accept-Language header
+    accept_lang = request.headers.get('accept-language', '')
+    if accept_lang:
+        # Parse Accept-Language header (e.g., "hi-IN,hi;q=0.9,en;q=0.8")
+        languages = accept_lang.split(',')
+        for lang_item in languages:
+            lang_code = lang_item.split(';')[0].split('-')[0].strip().lower()
+            if lang_code in SUPPORTED_LANGUAGES:
+                return lang_code
+    
+    # Default to English
+    return 'en'
 
 # Lifespan handler will be added later after imports
 from contextlib import asynccontextmanager
@@ -1317,12 +1351,16 @@ async def get_weather_auto_detect(request: Request):
 
 @api_router.get("/weather/location")
 async def get_weather_by_location(
+    request: Request,
     q: Optional[str] = Query(None, description="City or location name"),
     lat: Optional[float] = Query(None, description="Latitude"),
     lon: Optional[float] = Query(None, description="Longitude"),
     ai_insights: bool = Query(True, description="Include AI-powered weather insights")
 ):
-    """Get weather data for a specific location with optional Gemini AI insights"""
+    """Get weather data for a specific location with optional Gemini AI insights (multilingual support via ?lang=hi)"""
+    
+    # Get language preference
+    target_lang = get_language_from_request(request)
     
     # Determine coordinates
     if lat is not None and lon is not None:
@@ -1361,6 +1399,11 @@ async def get_weather_by_location(
             transformed_data["ai_insights"] = weather_insights
         
         transformed_data["source"] = "openweather"
+        
+        # Translate weather data if language is not English
+        if target_lang != 'en':
+            transformed_data = translate_response(transformed_data, target_lang, 'weather')
+        
         return transformed_data
     
     # Fallback to Open-Meteo if OpenWeather fails
@@ -1543,8 +1586,12 @@ async def get_rainfall_trends(
 # ==================== ALERTS ENDPOINTS ====================
 
 @api_router.get("/alerts")
-async def get_alerts(severity: Optional[str] = None):
-    """Get all active alerts generated from current weather and conditions"""
+async def get_alerts(request: Request, severity: Optional[str] = None):
+    """Get all active alerts generated from current weather and conditions (multilingual support via ?lang=hi)"""
+    
+    # Get language preference
+    target_lang = get_language_from_request(request)
+    
     try:
         alerts = []
         
@@ -1640,6 +1687,10 @@ async def get_alerts(severity: Optional[str] = None):
         # Filter by severity if provided
         if severity:
             alerts = [a for a in alerts if a.get('severity', '').lower() == severity.lower()]
+        
+        # Translate alerts if language is not English
+        if target_lang != 'en':
+            alerts = translate_response(alerts, target_lang, 'alert')
         
         return alerts
         
@@ -3239,12 +3290,21 @@ Provide recommendations as a JSON array with format: {{"type": "category", "mess
 # ==================== ADVANCED CHATBOT ENDPOINTS ====================
 
 @api_router.post("/chatbot/message", response_model=ChatMessage)
-async def chatbot_message(request: ChatbotMessageRequest):
-    """Send message to chatbot with conversation history and context"""
+async def chatbot_message(request: ChatbotMessageRequest, req: Request):
+    """Send message to chatbot with conversation history and context (with multilingual support)"""
     if not gemini_model:
         raise HTTPException(status_code=503, detail="AI service is not available")
     
+    # Get language preference
+    target_lang = get_language_from_request(req)
+    translation_service = get_translation_service()
+    
     try:
+        # Translate user message to English if needed
+        user_message_english = request.message
+        if target_lang != 'en':
+            user_message_english = translation_service.translate_text(request.message, 'en', target_lang)
+        
         # Get conversation history for context from in-memory storage
         history = [msg for msg in in_memory_db["chat_messages"] 
                    if msg.get("session_id") == request.session_id][-10:]
@@ -3280,7 +3340,7 @@ async def chatbot_message(request: ChatbotMessageRequest):
             "You are Suraksha Setu, an intelligent and friendly AI assistant specializing in disaster management, emergency response, and safety in India.\n\n"
             f"{context_info}"
             f"{conversation_history}\n\n"
-            f"User: {request.message}\n\n"
+            f"User: {user_message_english}\n\n"
             "Guidelines:\n"
             "- Answer ALL questions naturally, clearly, and comprehensively\n"
             "- For disaster/safety topics: Provide detailed, actionable advice with immediate safety steps\n"
@@ -3295,12 +3355,16 @@ async def chatbot_message(request: ChatbotMessageRequest):
         response = gemini_model.generate_content(prompt)
         response_text = response.text if hasattr(response, 'text') else str(response)
         
+        # Translate response to target language if needed
+        if target_lang != 'en':
+            response_text = translation_service.translate_text(response_text, target_lang, 'en')
+        
         # Create chat message
         chat_message = ChatMessage(
             session_id=request.session_id,
             user_id=request.user_id,
-            message=request.message,
-            response=response_text,
+            message=request.message,  # Store original message
+            response=response_text,    # Store translated response
             context=disaster_context
         )
         
@@ -3638,6 +3702,24 @@ async def get_dashboard_summary():
         raise HTTPException(status_code=500, detail="Error generating dashboard summary")
 
 # Health check endpoint for Render
+# ==================== LANGUAGE SUPPORT ENDPOINT ====================
+
+@api_router.get("/languages")
+async def get_supported_languages():
+    """Get list of supported languages for translation"""
+    return {
+        "supported_languages": SUPPORTED_LANGUAGES,
+        "default_language": "en",
+        "usage": "Add ?lang=hi to any endpoint to get translated response",
+        "examples": {
+            "alerts": "/api/alerts?lang=hi",
+            "weather": "/api/weather/location?q=Mumbai&lang=ta",
+            "chat": "/api/chatbot/message (with Accept-Language: hi header or ?lang=hi)"
+        }
+    }
+
+# ==================== MAIN APP ENDPOINTS ====================
+
 @app.get("/")
 async def root():
     """Root endpoint for health checks"""
