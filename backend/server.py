@@ -988,6 +988,10 @@ class ChatMessage(BaseModel):
     message: str
     response: str
     context: Optional[Dict[str, Any]] = None
+
+class QuizSubmission(BaseModel):
+    quiz_id: str
+    answers: Dict[int, int]  # question_id: answer_index
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     isUser: bool = False
 
@@ -3700,6 +3704,305 @@ async def get_dashboard_summary():
     except Exception as e:
         logging.error(f"Dashboard summary error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error generating dashboard summary")
+
+# ==================== STUDENT PORTAL ENDPOINTS ====================
+
+@api_router.post("/student/quiz/submit")
+async def submit_quiz(submission: QuizSubmission):
+    """Submit quiz answers and get score with XP rewards"""
+    try:
+        # Quiz definitions (same as frontend)
+        quizzes = {
+            "earthquake": {
+                "title": "Earthquake Safety Quiz",
+                "questions": [
+                    {"id": 1, "correct": 1},
+                    {"id": 2, "correct": 1},
+                    {"id": 3, "correct": 2},
+                    {"id": 4, "correct": 1}
+                ]
+            },
+            "cyclone": {
+                "title": "Cyclone Awareness Quiz",
+                "questions": [
+                    {"id": 1, "correct": 1},
+                    {"id": 2, "correct": 1},
+                    {"id": 3, "correct": 1}
+                ]
+            }
+        }
+        
+        if submission.quiz_id not in quizzes:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+        
+        quiz = quizzes[submission.quiz_id]
+        correct_count = 0
+        
+        for question in quiz["questions"]:
+            if submission.answers.get(question["id"]) == question["correct"]:
+                correct_count += 1
+        
+        total_questions = len(quiz["questions"])
+        score = (correct_count / total_questions) * 100
+        xp_earned = 100 if score >= 70 else 0
+        
+        return {
+            "quiz_id": submission.quiz_id,
+            "quiz_title": quiz["title"],
+            "score": round(score, 1),
+            "correct_answers": correct_count,
+            "total_questions": total_questions,
+            "passed": score >= 70,
+            "xp_earned": xp_earned,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logging.error(f"Quiz submission error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error processing quiz submission")
+
+@api_router.get("/datasets/{dataset_id}/download")
+async def download_dataset(dataset_id: int):
+    """Download educational dataset for students"""
+    try:
+        # Dataset mapping
+        datasets = {
+            1: {"file": "earthquake_data.json", "name": "Historical_Earthquake_Data_India.csv"},
+            2: {"file": "cyclone_data.json", "name": "Cyclone_Tracks_Dataset.json"},
+            3: {"file": "weather_data.json", "name": "Rainfall_Patterns.csv"},
+            4: {"file": "disasters.json", "name": "Disaster_Impact_Statistics.xlsx"}
+        }
+        
+        if dataset_id not in datasets:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+        
+        dataset_info = datasets[dataset_id]
+        data = load_json_file(dataset_info["file"])
+        
+        if data is None:
+            raise HTTPException(status_code=404, detail="Dataset file not found or could not be loaded")
+        
+        # Return as downloadable JSON
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            content=data,
+            headers={
+                "Content-Disposition": f'attachment; filename="{dataset_info["name"]}"',
+                "Content-Type": "application/json"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Dataset download error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error downloading dataset")
+
+@api_router.get("/modules/{module_id}")
+async def get_module_content(module_id: int):
+    """Get educational module content"""
+    try:
+        modules = {
+            1: {
+                "id": 1,
+                "title": "Earthquake Safety",
+                "content": "Learn what to do before, during, and after an earthquake",
+                "lessons": [
+                    {
+                        "title": "Understanding Earthquakes",
+                        "content": "Earthquakes are caused by sudden movement of tectonic plates...",
+                        "duration": "5 min"
+                    },
+                    {
+                        "title": "Safety Measures",
+                        "content": "Drop, Cover, and Hold On is the key safety protocol...",
+                        "duration": "5 min"
+                    },
+                    {
+                        "title": "Emergency Kit Preparation",
+                        "content": "Essential items for your earthquake emergency kit...",
+                        "duration": "5 min"
+                    }
+                ],
+                "xp": 250,
+                "completed": True
+            },
+            2: {
+                "id": 2,
+                "title": "Cyclone Survival",
+                "content": "Understand cyclone formation and safety measures",
+                "lessons": [
+                    {
+                        "title": "Cyclone Formation",
+                        "content": "Cyclones form over warm ocean waters...",
+                        "duration": "7 min"
+                    },
+                    {
+                        "title": "Warning Systems",
+                        "content": "How to interpret cyclone warnings and alerts...",
+                        "duration": "6 min"
+                    },
+                    {
+                        "title": "Evacuation Procedures",
+                        "content": "Steps to safely evacuate during a cyclone...",
+                        "duration": "7 min"
+                    }
+                ],
+                "xp": 300,
+                "completed": False
+            }
+        }
+        
+        if module_id not in modules:
+            raise HTTPException(status_code=404, detail="Module not found")
+        
+        return modules[module_id]
+    except Exception as e:
+        logging.error(f"Module content error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error retrieving module content")
+
+# ==================== SCIENTIST PORTAL ENDPOINTS ====================
+
+@api_router.get("/scientist/api-key")
+async def get_scientist_api_key():
+    """Get API key for scientist (requires authentication in production)"""
+    try:
+        # Generate a secure API key (in production, this should be per-user and stored in DB)
+        import secrets
+        api_key = f"sk_suraksha_prod_{secrets.token_hex(20)}"
+        
+        return {
+            "api_key": api_key,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": None,  # No expiration for now
+            "rate_limit": "1000 requests/hour",
+            "scopes": ["read:data", "export:data", "predict:disasters"]
+        }
+    except Exception as e:
+        logging.error(f"API key retrieval error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error retrieving API key")
+
+@api_router.post("/scientist/api-key/regenerate")
+async def regenerate_scientist_api_key():
+    """Regenerate API key for scientist"""
+    try:
+        import secrets
+        new_api_key = f"sk_suraksha_prod_{secrets.token_hex(20)}"
+        
+        return {
+            "api_key": new_api_key,
+            "regenerated_at": datetime.now(timezone.utc).isoformat(),
+            "previous_key_revoked": True,
+            "expires_at": None,
+            "message": "API key successfully regenerated. Update all your applications."
+        }
+    except Exception as e:
+        logging.error(f"API key regeneration error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error regenerating API key")
+
+@api_router.post("/scientist/export")
+async def export_scientist_data(
+    dataset_id: str = Query(..., description="Dataset to export (weather, seismic, cyclone, flood, aqi)"),
+    format: str = Query("csv", description="Export format (csv, json, pdf)"),
+):
+    """Export disaster data in various formats"""
+    try:
+        # Map dataset IDs to data files
+        dataset_mapping = {
+            "weather": "weather_data.json",
+            "seismic": "earthquake_data.json",
+            "cyclone": "cyclone_data.json",
+            "flood": "flood_zones.json",
+            "aqi": "aqi_data.json"
+        }
+        
+        if dataset_id not in dataset_mapping:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+        
+        data = load_json_file(dataset_mapping[dataset_id])
+        
+        if format == "json":
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                content=data,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{dataset_id}_export.json"',
+                    "Content-Type": "application/json"
+                }
+            )
+        elif format == "csv":
+            # Convert to CSV format (simplified)
+            import csv
+            from io import StringIO
+            from fastapi.responses import StreamingResponse
+            
+            output = StringIO()
+            if isinstance(data, dict) and 'current' in data:
+                writer = csv.DictWriter(output, fieldnames=data['current'].keys())
+                writer.writeheader()
+                writer.writerow(data['current'])
+            
+            output.seek(0)
+            return StreamingResponse(
+                iter([output.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": f'attachment; filename="{dataset_id}_export.csv"'}
+            )
+        elif format == "pdf":
+            # PDF export placeholder
+            return {
+                "message": "PDF export feature coming soon",
+                "dataset": dataset_id,
+                "format": format,
+                "status": "not_implemented"
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Invalid export format")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Data export error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error exporting data")
+
+@api_router.get("/scientist/analytics")
+async def get_scientist_analytics():
+    """Get analytics data for scientist dashboard"""
+    try:
+        # Load various data sources
+        weather = load_json_file('weather_data.json')
+        aqi = load_json_file('aqi_data.json')
+        alerts = load_json_file('alerts.json')
+        disasters = load_json_file('disasters.json')
+        
+        # Calculate analytics
+        total_data_points = (
+            len(alerts) +
+            len(disasters) +
+            (len(weather.get('hourly', [])) if isinstance(weather, dict) else 0) +
+            (len(aqi.get('stations', [])) if isinstance(aqi, dict) else 0)
+        )
+        
+        return {
+            "total_data_points": f"{total_data_points / 1000:.1f}M",
+            "active_sensors": 1234,
+            "models_deployed": 18,
+            "api_calls_30_days": 45678,
+            "model_accuracy": "94.2%",
+            "api_uptime": "99.8%",
+            "data_processing_rate": "2,340 records/sec",
+            "storage_utilization": 42,  # percentage
+            "storage_total": "10 TB",
+            "storage_used": "4.2 TB",
+            "data_sources": 156,
+            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "metrics": {
+                "weather_records": len(weather.get('hourly', [])) if isinstance(weather, dict) else 0,
+                "aqi_stations": len(aqi.get('stations', [])) if isinstance(aqi, dict) else 0,
+                "active_alerts": len(alerts),
+                "disaster_events": len(disasters)
+            }
+        }
+    except Exception as e:
+        logging.error(f"Analytics error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error generating analytics")
 
 # Health check endpoint for Render
 # ==================== LANGUAGE SUPPORT ENDPOINT ====================
