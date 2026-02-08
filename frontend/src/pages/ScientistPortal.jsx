@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Download, 
@@ -30,10 +30,36 @@ import { Progress } from "@/components/ui/progress";
 const ScientistPortal = () => {
   const [apiKeyCopied, setApiKeyCopied] = useState(false);
   const [selectedExportFormat, setSelectedExportFormat] = useState('csv');
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportingDatasets, setExportingDatasets] = useState(new Set());
+  const [apiKey, setApiKey] = useState(null);
+  const [apiKeyLoading, setApiKeyLoading] = useState(true);
 
-  // Mock API key
-  const apiKey = "sk_suraksha_prod_9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c";
+  // Fetch API key securely from backend
+  useEffect(() => {
+    const fetchApiKey = async () => {
+      try {
+        const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
+        const response = await fetch(`${API_URL}/scientist/api-key`, {
+          credentials: 'include' // Include cookies for auth
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch API key');
+        }
+        
+        const data = await response.json();
+        setApiKey(data.api_key);
+      } catch (error) {
+        console.error('Error fetching API key:', error);
+        toast.error('Failed to load API key. Please try again later.');
+        setApiKey(null);
+      } finally {
+        setApiKeyLoading(false);
+      }
+    };
+    
+    fetchApiKey();
+  }, []);
 
   // Available datasets for export
   const exportableDatasets = [
@@ -121,26 +147,73 @@ const ScientistPortal = () => {
     }
   ];
 
-  const handleCopyApiKey = () => {
-    navigator.clipboard.writeText(apiKey);
-    setApiKeyCopied(true);
-    toast.success('API key copied to clipboard');
-    setTimeout(() => setApiKeyCopied(false), 2000);
+  const handleCopyApiKey = async () => {
+    try {
+      await navigator.clipboard.writeText(apiKey);
+      setApiKeyCopied(true);
+      toast.success('API key copied to clipboard');
+      setTimeout(() => setApiKeyCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy API key:', error);
+      
+      // Fallback: try using execCommand
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = apiKey;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        
+        if (successful) {
+          setApiKeyCopied(true);
+          toast.success('API key copied to clipboard');
+          setTimeout(() => setApiKeyCopied(false), 2000);
+        } else {
+          throw new Error('execCommand failed');
+        }
+      } catch (fallbackError) {
+        toast.error('Failed to copy API key. Please copy it manually.');
+      }
+    }
   };
 
   const handleExportData = async (datasetId, format) => {
-    setIsExporting(true);
+    setExportingDatasets(prev => new Set(prev).add(datasetId));
     toast.info(`Preparing ${format.toUpperCase()} export...`);
     
     // Simulate export process
     setTimeout(() => {
-      setIsExporting(false);
+      setExportingDatasets(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(datasetId);
+        return newSet;
+      });
       toast.success(`${datasetId} data exported successfully as ${format.toUpperCase()}!`);
     }, 2000);
   };
 
-  const handleRegenerateApiKey = () => {
-    toast.success('New API key generated! Update your applications.');
+  const handleRegenerateApiKey = async () => {
+    try {
+      const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
+      const response = await fetch(`${API_URL}/scientist/api-key/regenerate`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to regenerate API key');
+      }
+      
+      const data = await response.json();
+      setApiKey(data.api_key);
+      toast.success('New API key generated! Update your applications.');
+    } catch (error) {
+      console.error('Error regenerating API key:', error);
+      toast.error('Backend endpoint not implemented yet. Feature coming soon!');
+    }
   };
 
   return (
@@ -262,10 +335,10 @@ const ScientistPortal = () => {
                     </div>
                     <Button
                       onClick={() => handleExportData(dataset.id, selectedExportFormat)}
-                      disabled={isExporting}
+                      disabled={exportingDatasets.has(dataset.id)}
                       className="ml-4"
                     >
-                      {isExporting ? (
+                      {exportingDatasets.has(dataset.id) ? (
                         <>
                           <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                           Exporting...
@@ -417,11 +490,12 @@ const ScientistPortal = () => {
                 <label className="text-sm font-medium mb-2 block">Your API Key</label>
                 <div className="flex gap-2">
                   <div className="flex-1 p-3 bg-muted rounded-md font-mono text-sm break-all">
-                    {apiKey}
+                    {apiKeyLoading ? 'Loading...' : apiKey ? `${apiKey.slice(0, 12)}...${apiKey.slice(-8)}` : 'Failed to load API key'}
                   </div>
                   <Button
                     variant="outline"
                     onClick={handleCopyApiKey}
+                    disabled={!apiKey || apiKeyLoading}
                   >
                     {apiKeyCopied ? (
                       <Check className="w-4 h-4" />
@@ -508,7 +582,7 @@ const ScientistPortal = () => {
                 {`import requests
 
 # Set your API key
-API_KEY = "${apiKey}"
+API_KEY = "<YOUR_API_KEY_HERE>"
 BASE_URL = "https://api.suraksha-setu.com"
 
 # Example: Get earthquake predictions

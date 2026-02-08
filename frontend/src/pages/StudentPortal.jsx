@@ -242,9 +242,49 @@ const StudentPortal = () => {
     }
   };
 
-  const handleDownloadDataset = (dataset) => {
-    toast.success(`Downloading ${dataset.title}...`);
-    // Implement actual download logic here
+  const handleDownloadDataset = async (dataset) => {
+    try {
+      toast.info(`Preparing ${dataset.title} for download...`);
+      
+      // Construct download URL based on dataset ID
+      const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
+      const downloadUrl = `${API_URL}/datasets/${dataset.id}/download`;
+      
+      // Fetch the file
+      const response = await fetch(downloadUrl, {
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.statusText}`);
+      }
+      
+      // Convert to blob
+      const blob = await response.blob();
+      
+      // Create object URL and download
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Determine file extension from format
+      const extension = dataset.format.toLowerCase();
+      const filename = `${dataset.title.replace(/[^a-z0-9]/gi, '_')}.${extension}`;
+      link.download = filename;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success(`${dataset.title} downloaded successfully!`);
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error(`Failed to download ${dataset.title}. ${error.message}`);
+    }
   };
 
   return (
@@ -337,12 +377,11 @@ const StudentPortal = () => {
                       <h3 className="text-2xl font-bold mb-1">{module.title}</h3>
                       <p className="text-white/90 text-sm">{module.description}</p>
                     </div>
-                    {module.locked && (
-                      <Lock className="absolute top-4 right-4 w-6 h-6" />
-                    )}
-                    {module.completed && (
+                    {module.completed ? (
                       <CheckCircle className="absolute top-4 right-4 w-6 h-6 text-green-300" />
-                    )}
+                    ) : module.locked ? (
+                      <Lock className="absolute top-4 right-4 w-6 h-6" />
+                    ) : null}
                   </div>
                   <CardContent className="p-6">
                     <div className="space-y-4">
