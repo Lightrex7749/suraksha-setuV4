@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow, Circle, Polygon } from '@react-google-maps/api';
-import { MapPin, AlertTriangle, Home, Navigation, Layers, X } from 'lucide-react';
+import { MapPin, AlertTriangle, Home, Navigation, Layers, X, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -10,6 +10,9 @@ import axios from 'axios';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || 'AIzaSyBRYE9Q6Y9Q9Q9Q9Q9Q9Q9Q9Q9Q9Q9Q9Q'; // Demo key
+
+// Move libraries outside component to prevent re-renders
+const GOOGLE_MAPS_LIBRARIES = ['places'];
 
 const mapContainerStyle = {
   width: '100%',
@@ -41,10 +44,11 @@ const DisasterMap = () => {
   const [showEvacuationCenters, setShowEvacuationCenters] = useState(true);
   const [showFloodZones, setShowFloodZones] = useState(true);
   const [userLocation, setUserLocation] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    libraries: ['places'],
+    libraries: GOOGLE_MAPS_LIBRARIES,
   });
 
   // Update center when user location changes
@@ -67,6 +71,7 @@ const DisasterMap = () => {
   }, []);
 
   const fetchDisasterData = async () => {
+    setIsRefreshing(true);
     try {
       // Fetch alerts
       const alertsRes = await axios.get(`${API_URL}/api/alerts`);
@@ -80,56 +85,76 @@ const DisasterMap = () => {
       
       setAlerts(alertsData);
 
-      // Fetch evacuation centers (mock data for now)
-      const evacuationRes = await axios.get(`${API_URL}/mock_data/evacuation_centers.json`);
-      if (Array.isArray(evacuationRes.data)) {
-        setEvacuationCenters(evacuationRes.data.map(center => ({
-          ...center,
-          position: { 
-            lat: center.coordinates.lat, 
-            lng: center.coordinates.lon  // backend uses "lon" not "lng"
+      // Fetch evacuation centers from API
+      try {
+        const evacuationRes = await axios.get(`${API_URL}/api/evacuation-centers`);
+        if (Array.isArray(evacuationRes.data)) {
+          setEvacuationCenters(evacuationRes.data.map(center => ({
+            ...center,
+            position: { 
+              lat: center.coordinates.lat, 
+              lng: center.coordinates.lon || center.coordinates.lng
+            },
+          })));
+        }
+      } catch (error) {
+        console.error('Error fetching evacuation centers:', error);
+        // Use fallback data
+        setEvacuationCenters([
+          {
+            id: 'evac_1',
+            name: 'Government School Shelter',
+            type: 'School',
+            capacity: 500,
+            current_occupancy: 120,
+            facilities: ['Medical Aid', 'Food', 'Water'],
+            contact: '+91-XXXXXXXXXX',
+            position: { lat: 28.6139, lng: 77.2090 },
           },
-        })));
+        ]);
       }
 
-      // Fetch flood zones (mock data)
-      const floodRes = await axios.get(`${API_URL}/mock_data/flood_zones.json`);
-      if (Array.isArray(floodRes.data)) {
-        setFloodZones(floodRes.data.map(zone => ({
-          ...zone,
-          // Transform coordinates array [[lat, lon], ...] to paths [{lat, lng}, ...]
-          paths: zone.coordinates.map(coord => ({
-            lat: coord[0],
-            lng: coord[1]
-          }))
-        })));
+      // Fetch flood zones (will use fallback if API not available)
+      try {
+        const floodRes = await axios.get(`${API_URL}/api/flood-zones`);
+        if (Array.isArray(floodRes.data)) {
+          setFloodZones(floodRes.data.map(zone => ({
+            ...zone,
+            paths: zone.coordinates.map(coord => ({
+              lat: coord[0],
+              lng: coord[1]
+            }))
+          })));
+        }
+      } catch (error) {
+        console.error('Error fetching flood zones:', error);
+        // Set empty array as fallback
+        setFloodZones([]);
       }
+      
+      toast.success('Map data refreshed');
     } catch (error) {
       console.error('Error fetching disaster data:', error);
-      // Use fallback data
+      toast.error('Failed to fetch disaster data');
+      // Use fallback data for alerts
       setAlerts([
         {
           id: 'alert_1',
           title: 'Cyclone Warning',
           severity: 'critical',
-          position: { lat: 17.6868, lng: 83.2185 }, // Visakhapatnam
+          description: 'Severe cyclone expected in coastal areas',
+          position: { lat: 17.6868, lng: 83.2185 },
         },
         {
           id: 'alert_2',
           title: 'Flood Risk',
           severity: 'warning',
-          position: { lat: 26.8467, lng: 80.9462 }, // Lucknow
+          description: 'Heavy rainfall may cause flooding',
+          position: { lat: 26.8467, lng: 80.9462 },
         },
       ]);
-      
-      setEvacuationCenters([
-        {
-          id: 'evac_1',
-          name: 'Government School Shelter',
-          capacity: 500,
-          position: { lat: 28.6139, lng: 77.2090 }, // Delhi
-        },
-      ]);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -223,18 +248,23 @@ const DisasterMap = () => {
   return (
     <div className="space-y-4">
       {/* Map Controls */}
-      <Card className="p-4">
+      <Card className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-gray-800 dark:to-gray-900 border-2 shadow-lg">
         <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-2">
-            <Layers className="w-5 h-5 text-blue-600" />
-            <h3 className="font-semibold">Map Layers</h3>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-600 rounded-lg shadow-md">
+              <Layers className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-lg">Interactive Disaster Map</h3>
+              <p className="text-xs text-muted-foreground">Toggle layers and navigate</p>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
               variant={showAlerts ? 'default' : 'outline'}
               size="sm"
               onClick={() => setShowAlerts(!showAlerts)}
-              className="gap-2"
+              className="gap-2 transition-all hover:scale-105 shadow-md"
             >
               <AlertTriangle className="w-4 h-4" />
               Alerts ({alerts.length})
@@ -243,7 +273,7 @@ const DisasterMap = () => {
               variant={showEvacuationCenters ? 'default' : 'outline'}
               size="sm"
               onClick={() => setShowEvacuationCenters(!showEvacuationCenters)}
-              className="gap-2"
+              className="gap-2 transition-all hover:scale-105 shadow-md"
             >
               <Home className="w-4 h-4" />
               Shelters ({evacuationCenters.length})
@@ -252,7 +282,7 @@ const DisasterMap = () => {
               variant={showFloodZones ? 'default' : 'outline'}
               size="sm"
               onClick={() => setShowFloodZones(!showFloodZones)}
-              className="gap-2"
+              className="gap-2 transition-all hover:scale-105 shadow-md"
             >
               <Layers className="w-4 h-4" />
               Flood Zones ({floodZones.length})
@@ -261,17 +291,27 @@ const DisasterMap = () => {
               variant="outline"
               size="sm"
               onClick={handleMyLocation}
-              className="gap-2"
+              className="gap-2 transition-all hover:scale-105 shadow-md hover:bg-blue-50"
             >
               <Navigation className="w-4 h-4" />
               My Location
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchDisasterData}
+              disabled={isRefreshing}
+              className="gap-2 transition-all hover:scale-105 shadow-md hover:bg-green-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Refresh
             </Button>
           </div>
         </div>
       </Card>
 
       {/* Map */}
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden shadow-xl border-2 rounded-xl">
         <GoogleMap
           mapContainerStyle={mapContainerStyle}
           center={center}
@@ -411,24 +451,47 @@ const DisasterMap = () => {
       </Card>
 
       {/* Legend */}
-      <Card className="p-4">
-        <h3 className="font-semibold mb-3 text-sm">Map Legend</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-red-500"></div>
-            <span>Critical Alert</span>
+      <Card className="p-5 bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-800 dark:to-gray-900 border-2 shadow-lg">
+        <h3 className="font-bold mb-4 text-lg flex items-center gap-2">
+          <div className="w-1 h-6 bg-gradient-to-b from-blue-600 to-purple-600 rounded"></div>
+          Map Legend
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-white dark:hover:bg-gray-700 transition-all cursor-pointer group">
+            <div className="w-6 h-6 rounded-full bg-red-500 shadow-lg group-hover:scale-110 transition-transform flex items-center justify-center">
+              <span className="text-white text-xs font-bold">!</span>
+            </div>
+            <div>
+              <div className="font-semibold">Critical Alert</div>
+              <div className="text-xs text-muted-foreground">Immediate action</div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-orange-500"></div>
-            <span>Warning</span>
+          <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-white dark:hover:bg-gray-700 transition-all cursor-pointer group">
+            <div className="w-6 h-6 rounded-full bg-orange-500 shadow-lg group-hover:scale-110 transition-transform flex items-center justify-center">
+              <span className="text-white text-xs font-bold">!</span>
+            </div>
+            <div>
+              <div className="font-semibold">Warning</div>
+              <div className="text-xs text-muted-foreground">Stay alert</div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-green-500"></div>
-            <span>Evacuation Center</span>
+          <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-white dark:hover:bg-gray-700 transition-all cursor-pointer group">
+            <div className="w-6 h-6 rounded-full bg-green-500 shadow-lg group-hover:scale-110 transition-transform flex items-center justify-center">
+              <Home className="w-3 h-3 text-white" />
+            </div>
+            <div>
+              <div className="font-semibold">Evacuation Center</div>
+              <div className="text-xs text-muted-foreground">Safe shelter</div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-blue-500"></div>
-            <span>Your Location</span>
+          <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-white dark:hover:bg-gray-700 transition-all cursor-pointer group">
+            <div className="w-6 h-6 rounded-full bg-blue-500 shadow-lg group-hover:scale-110 transition-transform flex items-center justify-center">
+              <div className="w-2 h-2 rounded-full bg-white"></div>
+            </div>
+            <div>
+              <div className="font-semibold">Your Location</div>
+              <div className="text-xs text-muted-foreground">Current position</div>
+            </div>
           </div>
         </div>
       </Card>
