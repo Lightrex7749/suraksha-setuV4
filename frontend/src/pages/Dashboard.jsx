@@ -110,6 +110,7 @@ const Dashboard = () => {
     fetchRecommendations();
     const interval = setInterval(fetchRecommendations, 300000);
     return () => clearInterval(interval);
+  }, []);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -241,8 +242,7 @@ const Dashboard = () => {
               </div>
             )}
           </div>
-        </motion.</div>
-        </div>
+        </motion.div>
       </div>
     </div>
   );
