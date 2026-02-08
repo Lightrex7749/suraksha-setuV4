@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import useWebSocket from '@/hooks/useWebSocket';
 
 const LocationContext = createContext();
 
@@ -16,6 +17,36 @@ export const LocationProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [alerts, setAlerts] = useState([]);
+
+  // Initialize WebSocket for real-time alerts
+  const wsUrl = (process.env.REACT_APP_API_URL || 'http://localhost:8000').replace('http://', 'ws://').replace('https://', 'wss://') + '/api/ws/alerts';
+  
+  const {
+    isConnected: wsConnected,
+    lastMessage: wsMessage,
+    setLocation: wsSetLocation,
+    requestAlerts: wsRequestAlerts,
+  } = useWebSocket(wsUrl, {
+    onMessage: (message) => {
+      // Handle incoming WebSocket messages
+      if (message.type === 'new_alert') {
+        // Add new alert to alerts list
+        setAlerts((prevAlerts) => {
+          // Prevent duplicates
+          const exists = prevAlerts.some(alert => alert.id === message.id);
+          if (exists) return prevAlerts;
+          
+          return [message, ...prevAlerts];
+        });
+      } else if (message.type === 'alerts_list') {
+        // Update alerts list from server
+        setAlerts(message.alerts || []);
+      }
+    },
+    autoReconnect: true,
+    maxReconnectAttempts: 5,
+    reconnectInterval: 3000,
+  });
 
   // Load saved location from localStorage
   useEffect(() => {
@@ -36,6 +67,19 @@ export const LocationProvider = ({ children }) => {
       detectLocation();
     }
   }, []);
+
+  // Send location to WebSocket when it changes
+  useEffect(() => {
+    if (location && wsConnected) {
+      wsSetLocation({
+        latitude: location.latitude,
+        longitude: location.longitude,
+        city: location.city,
+        state: location.state,
+        pin_code: location.pin_code,
+      });
+    }
+  }, [location, wsConnected, wsSetLocation]);
 
   // Fetch nearby alerts when location changes
   useEffect(() => {
@@ -183,6 +227,10 @@ export const LocationProvider = ({ children }) => {
   const refreshNearbyAlerts = () => {
     if (location?.latitude && location?.longitude) {
       fetchNearbyAlerts(location.latitude, location.longitude);
+      // Also request via WebSocket if connected
+      if (wsConnected) {
+        wsRequestAlerts();
+      }
     }
   };
 
@@ -191,6 +239,7 @@ export const LocationProvider = ({ children }) => {
     loading,
     error,
     alerts,
+    wsConnected, // WebSocket connection status
     detectLocation,
     updateLocationByPincode,
     updateLocationByCoords,

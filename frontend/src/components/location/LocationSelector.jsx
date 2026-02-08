@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MapPin, Loader2, Check, X, Navigation } from 'lucide-react';
+import { MapPin, Loader2, Check, X, Navigation, Wifi, WifiOff } from 'lucide-react';
 import { useLocation } from '../../contexts/LocationContext';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -12,6 +12,7 @@ const LocationSelector = ({ compact = false }) => {
     location,
     loading,
     error,
+    wsConnected,
     detectLocation,
     updateLocationByPincode,
     clearLocation,
@@ -117,9 +118,27 @@ const LocationSelector = ({ compact = false }) => {
                   PIN: {location.pin_code}
                 </p>
               )}
-              <p className="text-xs text-blue-600 dark:text-blue-400">
-                Method: {location.method === 'pincode' ? 'PIN Code' : location.method === 'gps' ? 'GPS' : 'IP Address'}
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-blue-600 dark:text-blue-400">
+                  Method: {location.method === 'pincode' ? 'PIN Code' : location.method === 'gps' ? 'GPS' : 'IP Address'}
+                </p>
+                <Badge 
+                  variant={wsConnected ? "default" : "secondary"} 
+                  className={`gap-1 text-xs ${wsConnected ? 'bg-green-600' : 'bg-gray-400'}`}
+                >
+                  {wsConnected ? (
+                    <>
+                      <Wifi className="w-3 h-3" />
+                      Live Alerts
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff className="w-3 h-3" />
+                      Offline
+                    </>
+                  )}
+                </Badge>
+              </div>
             </div>
           </div>
         )}

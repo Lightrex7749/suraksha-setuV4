@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends, status, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends, status, Request, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -17,6 +17,7 @@ import jwt
 import httpx
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
+import asyncio
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -63,6 +64,145 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
+
+# ==================== WEBSOCKET CONNECTION MANAGER ====================
+
+class ConnectionManager:
+    """Manages WebSocket connections for real-time alerts"""
+    
+    def __init__(self):
+        # Active connections: {client_id: websocket}
+        self.active_connections: Dict[str, WebSocket] = {}
+        # User locations: {client_id: {lat, lon, pin_code}}
+        self.client_locations: Dict[str, Dict[str, Any]] = {}
+        # Alert history to prevent duplicates
+        self.sent_alerts: Dict[str, set] = {}  # {client_id: set of alert_ids}
+    
+    async def connect(self, websocket: WebSocket, client_id: str):
+        """Accept and register a new WebSocket connection"""
+        await websocket.accept()
+        self.active_connections[client_id] = websocket
+        self.sent_alerts[client_id] = set()
+        logging.info(f"WebSocket client connected: {client_id}")
+        
+        # Send welcome message
+        await self.send_personal_message({
+            "type": "connection",
+            "message": "Connected to Suraksha Setu real-time alerts",
+            "client_id": client_id,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }, websocket)
+    
+    def disconnect(self, client_id: str):
+        """Remove a WebSocket connection"""
+        if client_id in self.active_connections:
+            del self.active_connections[client_id]
+        if client_id in self.client_locations:
+            del self.client_locations[client_id]
+        if client_id in self.sent_alerts:
+            del self.sent_alerts[client_id]
+        logging.info(f"WebSocket client disconnected: {client_id}")
+    
+    def set_client_location(self, client_id: str, location: Dict[str, Any]):
+        """Store client location for targeted alerts"""
+        self.client_locations[client_id] = location
+        logging.info(f"Updated location for client {client_id}: {location.get('city', 'Unknown')}")
+    
+    async def send_personal_message(self, message: Dict[str, Any], websocket: WebSocket):
+        """Send message to a specific client"""
+        try:
+            await websocket.send_json(message)
+        except Exception as e:
+            logging.error(f"Error sending message to client: {str(e)}")
+    
+    async def broadcast(self, message: Dict[str, Any], alert_id: Optional[str] = None):
+        """Broadcast message to all connected clients"""
+        disconnected_clients = []
+        
+        for client_id, connection in self.active_connections.items():
+            try:
+                # Check if alert already sent to this client
+                if alert_id and alert_id in self.sent_alerts.get(client_id, set()):
+                    continue
+                
+                await connection.send_json(message)
+                
+                # Mark alert as sent
+                if alert_id:
+                    self.sent_alerts[client_id].add(alert_id)
+                    
+            except Exception as e:
+                logging.error(f"Error broadcasting to client {client_id}: {str(e)}")
+                disconnected_clients.append(client_id)
+        
+        # Clean up disconnected clients
+        for client_id in disconnected_clients:
+            self.disconnect(client_id)
+    
+    async def broadcast_location_based(self, alert: Dict[str, Any], radius_km: float = 100):
+        """Broadcast alert only to clients within specified radius"""
+        alert_coords = alert.get('coordinates', {})
+        if not alert_coords or 'lat' not in alert_coords or 'lon' not in alert_coords:
+            # No coordinates, broadcast to all
+            await self.broadcast(alert, alert.get('id'))
+            return
+        
+        alert_lat = alert_coords['lat']
+        alert_lon = alert_coords['lon']
+        alert_id = alert.get('id')
+        
+        disconnected_clients = []
+        target_count = 0
+        
+        for client_id, connection in self.active_connections.items():
+            try:
+                # Check if alert already sent
+                if alert_id and alert_id in self.sent_alerts.get(client_id, set()):
+                    continue
+                
+                # Get client location
+                client_location = self.client_locations.get(client_id)
+                
+                if client_location and 'latitude' in client_location and 'longitude' in client_location:
+                    # Calculate distance
+                    lat_diff = abs(client_location['latitude'] - alert_lat)
+                    lon_diff = abs(client_location['longitude'] - alert_lon)
+                    distance_km = ((lat_diff ** 2 + lon_diff ** 2) ** 0.5) * 111
+                    
+                    if distance_km <= radius_km:
+                        # Add distance info to alert
+                        alert_with_distance = {**alert, "distance_km": round(distance_km, 1)}
+                        await connection.send_json(alert_with_distance)
+                        target_count += 1
+                        
+                        if alert_id:
+                            self.sent_alerts[client_id].add(alert_id)
+                else:
+                    # No location set, send alert anyway
+                    await connection.send_json(alert)
+                    if alert_id:
+                        self.sent_alerts[client_id].add(alert_id)
+                        
+            except Exception as e:
+                logging.error(f"Error broadcasting to client {client_id}: {str(e)}")
+                disconnected_clients.append(client_id)
+        
+        # Clean up
+        for client_id in disconnected_clients:
+            self.disconnect(client_id)
+        
+        logging.info(f"Alert broadcast: {target_count} clients within {radius_km}km")
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get connection statistics"""
+        return {
+            "total_connections": len(self.active_connections),
+            "clients_with_location": len(self.client_locations),
+            "active_client_ids": list(self.active_connections.keys())
+        }
+
+# Initialize WebSocket manager
+ws_manager = ConnectionManager()
 
 # Lifespan handler will be added later after imports
 from contextlib import asynccontextmanager
@@ -2153,6 +2293,129 @@ async def get_nearby_alerts(
     except Exception as e:
         logging.error(f"Nearby alerts error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to fetch nearby alerts")
+
+# ==================== WEBSOCKET ENDPOINTS ====================
+
+@app.websocket("/api/ws/alerts")
+async def websocket_alerts_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time disaster alerts"""
+    import uuid
+    client_id = str(uuid.uuid4())
+    
+    await ws_manager.connect(websocket, client_id)
+    
+    try:
+        while True:
+            # Receive messages from client
+            data = await websocket.receive_json()
+            message_type = data.get("type", "")
+            
+            if message_type == "ping":
+                # Respond to keepalive
+                await ws_manager.send_personal_message({
+                    "type": "pong",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }, websocket)
+            
+            elif message_type == "set_location":
+                # Client sends location for targeted alerts
+                location = data.get("location", {})
+                ws_manager.set_client_location(client_id, location)
+                
+                await ws_manager.send_personal_message({
+                    "type": "location_updated",
+                    "message": f"Location set to {location.get('city', 'Unknown')}",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }, websocket)
+            
+            elif message_type == "get_stats":
+                # Admin can request connection stats
+                stats = ws_manager.get_stats()
+                await ws_manager.send_personal_message({
+                    "type": "stats",
+                    "data": stats,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }, websocket)
+            
+            elif message_type == "request_alerts":
+                # Client requests current alerts
+                alerts_data = load_json_file('alerts.json')
+                alerts = alerts_data.get('alerts', []) if alerts_data else []
+                
+                # Filter by client location if available
+                client_location = ws_manager.client_locations.get(client_id)
+                if client_location and 'latitude' in client_location:
+                    filtered_alerts = []
+                    for alert in alerts:
+                        alert_coords = alert.get('coordinates', {})
+                        if alert_coords and 'lat' in alert_coords and 'lon' in alert_coords:
+                            lat_diff = abs(alert_coords['lat'] - client_location['latitude'])
+                            lon_diff = abs(alert_coords['lon'] - client_location['longitude'])
+                            distance_km = ((lat_diff ** 2 + lon_diff ** 2) ** 0.5) * 111
+                            
+                            if distance_km <= 100:  # 100km radius
+                                alert_copy = alert.copy()
+                                alert_copy['distance_km'] = round(distance_km, 1)
+                                filtered_alerts.append(alert_copy)
+                    
+                    alerts = filtered_alerts
+                
+                await ws_manager.send_personal_message({
+                    "type": "alerts_list",
+                    "alerts": alerts,
+                    "count": len(alerts),
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }, websocket)
+                
+    except WebSocketDisconnect:
+        ws_manager.disconnect(client_id)
+        logging.info(f"Client {client_id} disconnected")
+    except Exception as e:
+        logging.error(f"WebSocket error for client {client_id}: {str(e)}")
+        ws_manager.disconnect(client_id)
+
+@api_router.post("/alerts/broadcast")
+async def broadcast_alert(alert: Dict[str, Any]):
+    """
+    Broadcast a new alert to all connected WebSocket clients
+    (For testing and admin use)
+    """
+    try:
+        # Add metadata
+        alert_with_meta = {
+            **alert,
+            "id": alert.get("id", f"alert_{datetime.now(timezone.utc).timestamp()}"),
+            "type": "new_alert",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "broadcast": True
+        }
+        
+        # Determine if location-based or global
+        if "coordinates" in alert and alert["coordinates"]:
+            radius_km = alert.get("radius_km", 100)
+            await ws_manager.broadcast_location_based(alert_with_meta, radius_km)
+        else:
+            await ws_manager.broadcast(alert_with_meta, alert_with_meta["id"])
+        
+        return {
+            "success": True,
+            "message": "Alert broadcast successfully",
+            "alert_id": alert_with_meta["id"],
+            "connections": len(ws_manager.active_connections)
+        }
+    except Exception as e:
+        logging.error(f"Broadcast alert error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to broadcast alert")
+
+@api_router.get("/websocket/stats")
+async def get_websocket_stats():
+    """Get WebSocket connection statistics"""
+    stats = ws_manager.get_stats()
+    return {
+        "status": "ok",
+        "stats": stats,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 # ==================== DISASTERS ENDPOINTS ====================
 
