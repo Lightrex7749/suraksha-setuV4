@@ -6,6 +6,7 @@ import ActiveAlerts from '@/components/dashboard/ActiveAlerts';
 import DisasterTimeline from '@/components/dashboard/DisasterTimeline';
 import ImpactStats from '@/components/dashboard/ImpactStats';
 import LiveAQIChart from '@/components/dashboard/LiveAQIChart';
+import LocationSelector from '@/components/location/LocationSelector';
 import { Button } from "@/components/ui/button";
 import { Download, Share2 } from 'lucide-react';
 import axios from 'axios';
@@ -139,27 +140,33 @@ const Dashboard = () => {
       {/* Middle Row: Stats */}
       <ImpactStats />
 
-      {/* Bottom Row: Timeline & Map Preview (Placeholder for now) */}
+      {/* Bottom Row: Timeline, AQI, Location & Recommendations */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
            <DisasterTimeline />
            {/* Live AQI Trend Chart */}
            <LiveAQIChart />
         </div>
-        <div className="bg-card border border-border rounded-xl p-6">
-          <h3 className="font-semibold mb-4">AI Recommendations</h3>
-          {recommendations.length > 0 ? (
-            <ul className="space-y-3 text-sm">
-              {recommendations.map((rec, idx) => (
-                <li key={idx} className="flex gap-2 items-start">
-                  <span className={`${rec.color} rounded-full p-1 mt-0.5 text-xs`}>{rec.icon}</span>
-                  <span>{rec.text}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="text-sm text-muted-foreground animate-pulse">Loading recommendations...</div>
-          )}
+        <div className="space-y-6">
+          {/* Location Selector */}
+          <LocationSelector />
+          
+          {/* AI Recommendations */}
+          <div className="bg-card border border-border rounded-xl p-6">
+            <h3 className="font-semibold mb-4">AI Recommendations</h3>
+            {recommendations.length > 0 ? (
+              <ul className="space-y-3 text-sm">
+                {recommendations.map((rec, idx) => (
+                  <li key={idx} className="flex gap-2 items-start">
+                    <span className={`${rec.color} rounded-full p-1 mt-0.5 text-xs`}>{rec.icon}</span>
+                    <span>{rec.text}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-sm text-muted-foreground animate-pulse">Loading recommendations...</div>
+            )}
+          </div>
         </div>
       </div>
     </div>

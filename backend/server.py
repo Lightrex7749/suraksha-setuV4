@@ -741,6 +741,38 @@ class Token(BaseModel):
     token_type: str
     user: User
 
+# ==================== LOCATION & PIN CODE MODELS ====================
+
+class PinCodeValidateRequest(BaseModel):
+    pin_code: str
+
+class PinCodeInfo(BaseModel):
+    pin_code: str
+    city: str
+    district: str
+    state: str
+    country: str = "India"
+    latitude: float
+    longitude: float
+    is_valid: bool = True
+
+class UserLocationPreference(BaseModel):
+    user_id: Optional[str] = None
+    pin_code: str
+    city: str
+    state: str
+    latitude: float
+    longitude: float
+    is_primary: bool = True
+    alert_preferences: Optional[Dict[str, Any]] = None
+
+class LocationUpdateRequest(BaseModel):
+    pin_code: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    enable_alerts: bool = True
+    alert_severity: List[str] = ["warning", "critical"]  # info, warning, critical
+
 # ==================== AUTHENTICATION UTILITIES ====================
 
 def hash_password(password: str) -> str:
@@ -1886,6 +1918,241 @@ async def get_aqi_history(
     except Exception as e:
         logging.error(f"Historical AQI error: {str(e)}")
         raise HTTPException(status_code=503, detail="Unable to fetch historical AQI data")
+
+# ==================== LOCATION & PIN CODE ENDPOINTS ====================
+
+async def validate_indian_pincode(pin_code: str) -> Optional[PinCodeInfo]:
+    """Validate Indian PIN code and get location details"""
+    try:
+        # Remove any spaces or special characters
+        pin_code = pin_code.strip().replace(" ", "")
+        
+        # Indian PIN codes are exactly 6 digits
+        if not pin_code.isdigit() or len(pin_code) != 6:
+            return None
+        
+        # Use Nominatim to geocode the PIN code
+        try:
+            location = geolocator.geocode(f"{pin_code}, India", timeout=10, exactly_one=True, language="en")
+            
+            if location:
+                # Extract location details from address
+                address_parts = location.address.split(", ")
+                
+                # Try to extract city, district, state
+                city = ""
+                district = ""
+                state = ""
+                
+                for part in address_parts:
+                    if any(keyword in part.lower() for keyword in ["postal code", "pincode", "pin code"]):
+                        continue
+                    elif any(keyword in part.lower() for keyword in ["district", "taluk"]):
+                        district = part.strip()
+                    elif not city and len(part) > 2:
+                        city = part.strip()
+                    elif "india" not in part.lower() and len(part) > 3:
+                        if not state:
+                            state = part.strip()
+                
+                # Fallback: use the first meaningful part as city
+                if not city and len(address_parts) > 0:
+                    city = address_parts[0].strip()
+                
+                return PinCodeInfo(
+                    pin_code=pin_code,
+                    city=city or "Unknown",
+                    district=district or city or "Unknown",
+                    state=state or "India",
+                    country="India",
+                    latitude=location.latitude,
+                    longitude=location.longitude,
+                    is_valid=True
+                )
+        except Exception as geocode_error:
+            logging.warning(f"Geocoding failed for PIN {pin_code}: {str(geocode_error)}")
+        
+        # If geocoding fails, use a basic PIN code range validation
+        # First digit indicates region in India
+        first_digit = int(pin_code[0])
+        regions = {
+            1: {"state": "Delhi, Haryana, Punjab"},
+            2: {"state": "Himachal Pradesh, Haryana"},
+            3: {"state": "Punjab, Himachal Pradesh, Jammu & Kashmir"},
+            4: {"state": "Rajasthan, Gujarat"},
+            5: {"state": "Maharashtra, Madhya Pradesh"},
+            6: {"state": "Karnataka, Goa, Kerala, Tamil Nadu"},
+            7: {"state": "West Bengal, Odisha, Andhra Pradesh"},
+            8: {"state": "Bihar, Jharkhand, Assam, Northeast"},
+            9: {"state": "UP, Uttarakhand, Nepal border"}
+        }
+        
+        if first_digit in regions:
+            return PinCodeInfo(
+                pin_code=pin_code,
+                city="Unknown",
+                district="Unknown",  
+                state=regions[first_digit]["state"],
+                country="India",
+                latitude=20.5937,  # Center of India as fallback
+                longitude=78.9629,
+                is_valid=True
+            )
+        
+        return None
+        
+    except Exception as e:
+        logging.error(f"PIN code validation error: {str(e)}")
+        return None
+
+@api_router.post("/location/validate-pincode")
+async def validate_pincode(request: PinCodeValidateRequest):
+    """Validate Indian PIN code and return location details"""
+    pin_info = await validate_indian_pincode(request.pin_code)
+    
+    if not pin_info:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid PIN code '{request.pin_code}'. Indian PIN codes must be 6 digits."
+        )
+    
+    return pin_info
+
+@api_router.post("/location/update")
+async def update_user_location(request: LocationUpdateRequest):
+    """Update user's location preference"""
+    try:
+        location_data = None
+        
+        # If PIN code is provided, validate and use it
+        if request.pin_code:
+            pin_info = await validate_indian_pincode(request.pin_code)
+            if not pin_info:
+                raise HTTPException(status_code=400, detail="Invalid PIN code")
+            
+            location_data = {
+                "pin_code": pin_info.pin_code,
+                "city": pin_info.city,
+                "state": pin_info.state,
+                "latitude": pin_info.latitude,
+                "longitude": pin_info.longitude
+            }
+        
+        # If lat/lon provided, use reverse geocoding
+        elif request.latitude and request.longitude:
+            coordinates = await reverse_geocode(request.latitude, request.longitude)
+            if coordinates:
+                location_data = {
+                    "latitude": request.latitude,
+                    "longitude": request.longitude,
+                    "city": coordinates.get("city", "Unknown"),
+                    "state": coordinates.get("region", "Unknown"),
+                    "pin_code": None
+                }
+        
+        if not location_data:
+            raise HTTPException(
+                status_code=400,
+                detail="Either pin_code or latitude/longitude must be provided"
+            )
+        
+        # Add alert preferences
+        location_data["enable_alerts"] = request.enable_alerts
+        location_data["alert_severity"] = request.alert_severity
+        location_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        
+        # In a real app, save to database here
+        # For now, just return the location data
+        
+        return {
+            "success": True,
+            "message": "Location preferences updated successfully",
+            "location": location_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Location update error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update location")
+
+@api_router.get("/location/current")
+async def get_current_location(request: Request):
+    """Get current location based on IP address"""
+    client_ip = request.client.host if request.client else None
+    
+    # Skip localhost IPs
+    if client_ip and (client_ip.startswith('127.') or client_ip.startswith('192.168.') or client_ip == '::1'):
+        client_ip = None
+    
+    location_data = await get_location_from_ip(client_ip)
+    
+    if not location_data:
+        # Fallback to India center
+        location_data = {
+            "lat": 20.5937,
+            "lon": 78.9629,
+            "city": "India",
+            "display_name": "India",
+            "country": "India",
+            "method": "fallback"
+        }
+    else:
+        location_data["method"] = "ip"
+    
+    return location_data
+
+@api_router.get("/location/nearby-alerts")
+async def get_nearby_alerts(
+    lat: float = Query(..., description="Latitude"),
+    lon: float = Query(..., description="Longitude"),
+    radius_km: int = Query(50, ge=1, le=500, description="Search radius in kilometers")
+):
+    """Get disaster alerts near a specific location"""
+    try:
+        # Load all alerts
+        alerts_data = load_json_file('alerts.json')
+        if not alerts_data:
+            return {"alerts": [], "count": 0}
+        
+        alerts = alerts_data.get('alerts', [])
+        nearby_alerts = []
+        
+        # Filter alerts by distance
+        for alert in alerts:
+            alert_coords = alert.get('coordinates', {})
+            if alert_coords and 'lat' in alert_coords and 'lon' in alert_coords:
+                # Simple distance calculation (Haversine would be more accurate)
+                lat_diff = abs(alert_coords['lat'] - lat)
+                lon_diff = abs(alert_coords['lon'] - lon)
+                
+                # Rough approximation: 1 degree ≈ 111 km
+                distance_km = ((lat_diff ** 2 + lon_diff ** 2) ** 0.5) * 111
+                
+                if distance_km <= radius_km:
+                    alert_copy = alert.copy()
+                    alert_copy['distance_km'] = round(distance_km, 1)
+                    nearby_alerts.append(alert_copy)
+        
+        # Sort by severity and distance
+        severity_order = {"critical": 0, "warning": 1, "info": 2}
+        nearby_alerts.sort(
+            key=lambda x: (
+                severity_order.get(x.get('severity', 'info'), 3),
+                x.get('distance_km', 999)
+            )
+        )
+        
+        return {
+            "alerts": nearby_alerts,
+            "count": len(nearby_alerts),
+            "location": {"lat": lat, "lon": lon},
+            "radius_km": radius_km
+        }
+        
+    except Exception as e:
+        logging.error(f"Nearby alerts error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch nearby alerts")
 
 # ==================== DISASTERS ENDPOINTS ====================
 
