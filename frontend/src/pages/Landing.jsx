@@ -44,8 +44,9 @@ const Landing = () => {
       </nav>
 
       {/* Hero Section with Problem Statement */}
-      <section className="relative overflow-hidden py-20 px-4 bg-gradient-to-br from-primary/5 via-purple-500/5 to-background">
+      <section className="relative overflow-hidden py-20 px-4 bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-pink-500/10 animate-gradient">
         <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 to-purple-600/5 animate-gradient"></div>
         <div className="max-w-6xl mx-auto relative">
           <motion.div 
             className="text-center space-y-8"
@@ -61,7 +62,7 @@ const Landing = () => {
 
             <div className="space-y-6">
               <h1 className="text-5xl md:text-7xl font-bold">
-                <span className="bg-gradient-to-r from-primary via-purple-600 to-pink-600 bg-clip-text text-transparent">
+                <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent animate-gradient">
                   One Platform.
                 </span>
                 <br />
@@ -81,7 +82,7 @@ const Landing = () => {
               <Button 
                 size="lg"
                 onClick={() => navigate('/app/dashboard')}
-                className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-700 text-lg px-8 shadow-lg shadow-primary/20"
+                className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 hover:from-blue-700 hover:via-purple-700 hover:to-pink-700 text-lg px-8 shadow-lg shadow-blue-600/30 animate-glow"
               >
                 Get Started Free <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
@@ -89,7 +90,7 @@ const Landing = () => {
                 size="lg"
                 variant="outline"
                 onClick={() => navigate('/app/dashboard')}
-                className="text-lg px-8 border-2"
+                className="text-lg px-8 border-2 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950 transition-all"
               >
                 <MessageCircle className="mr-2 w-5 h-5" /> Try AI Assistant
               </Button>
@@ -97,28 +98,28 @@ const Landing = () => {
 
             {/* Impact Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-12 max-w-4xl mx-auto">
-              <Card className="border-2">
+              <Card className="border-2 hover:shadow-lg hover:border-blue-300 transition-all animate-float">
                 <CardContent className="pt-6 text-center">
-                  <div className="text-3xl font-bold bg-gradient-to-br from-primary to-purple-600 bg-clip-text text-transparent">4+</div>
+                  <div className="text-3xl font-bold bg-gradient-to-br from-blue-600 to-purple-600 bg-clip-text text-transparent">4+</div>
                   <p className="text-sm text-muted-foreground mt-1">Data Sources Unified</p>
                   <p className="text-xs text-muted-foreground">IMD·ISRO·NDMA·CPCB</p>
                 </CardContent>
               </Card>
-              <Card className="border-2">
+              <Card className="border-2 hover:shadow-lg hover:border-purple-300 transition-all animate-float" style={{animationDelay: '0.1s'}}>
                 <CardContent className="pt-6 text-center">
                   <div className="text-3xl font-bold bg-gradient-to-br from-cyan-500 to-blue-600 bg-clip-text text-transparent">&lt;5s</div>
                   <p className="text-sm text-muted-foreground mt-1">Alert Latency</p>
                   <p className="text-xs text-muted-foreground">Real-time fusion</p>
                 </CardContent>
               </Card>
-              <Card className="border-2">
+              <Card className="border-2 hover:shadow-lg hover:border-pink-300 transition-all animate-float" style={{animationDelay: '0.2s'}}>
                 <CardContent className="pt-6 text-center">
                   <div className="text-3xl font-bold bg-gradient-to-br from-purple-500 to-pink-600 bg-clip-text text-transparent">10+</div>
                   <p className="text-sm text-muted-foreground mt-1">Languages</p>
                   <p className="text-xs text-muted-foreground">Hindi·Tamil·Bhojpuri</p>
                 </CardContent>
               </Card>
-              <Card className="border-2">
+              <Card className="border-2 hover:shadow-lg hover:border-green-300 transition-all animate-float" style={{animationDelay: '0.3s'}}>
                 <CardContent className="pt-6 text-center">
                   <div className="text-3xl font-bold bg-gradient-to-br from-green-500 to-emerald-600 bg-clip-text text-transparent">100%</div>
                   <p className="text-sm text-muted-foreground mt-1">PIN-code Aware</p>

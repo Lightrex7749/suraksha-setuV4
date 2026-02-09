@@ -56,8 +56,8 @@ function App() {
           </Routes>
         </BrowserRouter>
       </LocationProvider>
-    </ErrorBoundary>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
