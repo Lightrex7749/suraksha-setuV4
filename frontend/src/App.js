@@ -4,6 +4,8 @@ import { Toaster } from "sonner";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { LocationProvider } from "@/contexts/LocationContext";
 import MainLayout from "@/components/layout/MainLayout";
+import PWAInstallPrompt from "@/components/pwa/PWAInstallPrompt";
+import OfflineIndicator from "@/components/pwa/OfflineIndicator";
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import MapView from "@/pages/MapView";
@@ -20,6 +22,8 @@ function App() {
     <AuthProvider>
       <LocationProvider>
         <Toaster position="top-right" richColors closeButton />
+        <OfflineIndicator />
+        <PWAInstallPrompt />
         <BrowserRouter>
           <Routes>
             {/* Landing Page */}

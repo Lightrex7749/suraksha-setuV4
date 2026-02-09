@@ -1,5 +1,6 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends, status, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Depends, status, Request, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -4036,7 +4037,162 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}# ==================== SCIENTIST PORTAL - ADVANCED FEATURES ====================
+
+@api_router.post("/scientist/upload-dataset")
+async def upload_dataset(file: UploadFile = File(...)):
+    """Upload a dataset for analysis and simulation"""
+    try:
+        # Read file content
+        content = await file.read()
+        
+        # Determine file type and parse
+        if file.filename.endswith('.csv'):
+            # Save CSV file
+            file_path = f"./uploads/{file.filename}"
+            with open(file_path, 'wb') as f:
+                f.write(content)
+            
+            return {
+                "status": "success",
+                "filename": file.filename,
+                "size": len(content),
+                "type": "csv",
+                "message": "Dataset uploaded successfully"
+            }
+        elif file.filename.endswith('.json'):
+            # Parse JSON
+            import json
+            data = json.loads(content)
+            return {
+                "status": "success",
+                "filename": file.filename,
+                "size": len(content),
+                "type": "json",
+                "records": len(data) if isinstance(data, list) else 1,
+                "message": "Dataset uploaded successfully"
+            }
+        else:
+            return {
+                "status": "success",
+                "filename": file.filename,
+                "size": len(content),
+                "type": "unknown",
+                "message": "Dataset uploaded successfully"
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+@api_router.post("/scientist/run-simulation")
+async def run_simulation(request: dict):
+    """Run a simulation with a selected model and parameters"""
+    try:
+        model = request.get('model', 'flood_prediction')
+        parameters = request.get('parameters', {})
+        timesteps = parameters.get('timesteps', 100)
+        region = parameters.get('region', 'all')
+        
+        # Simulate running a prediction model
+        # In a real implementation, this would load the actual ML model
+        import random
+        import numpy as np
+        
+        predictions = []
+        for i in range(timesteps):
+            predictions.append({
+                "timestamp": f"2026-02-{9 + i//24}T{i%24:02d}:00:00",
+                "value": random.uniform(0.1, 0.9),
+                "confidence": random.uniform(0.7, 0.99)
+            })
+        
+        return {
+            "status": "completed",
+            "model": model,
+            "region": region,
+            "timesteps": timesteps,
+            "predictions_count": len(predictions),
+            "predictions": predictions[:10],  # Return first 10 as sample
+            "summary": {
+                "mean": np.mean([p['value'] for p in predictions]),
+                "std": np.std([p['value'] for p in predictions]),
+                "max": max([p['value'] for p in predictions]),
+                "min": min([p['value'] for p in predictions])
+            },
+            "message": f"Simulation completed with {len(predictions)} predictions"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Simulation failed: {str(e)}")
+
+
+@api_router.get("/scientist/export-model/{model_id}")
+async def export_model(model_id: str):
+    """Export a trained model file"""
+    import pickle
+    import io
+    
+    # Create a mock model object
+    # In a real implementation, this would load the actual trained model
+    mock_model = {
+        "id": model_id,
+        "type": "RandomForestRegressor",
+        "version": "2.1",
+        "parameters": {
+            "n_estimators": 100,
+            "max_depth": 10,
+            "random_state": 42
+        },
+        "trained_on": "2026-01-15",
+        "accuracy": 94.2
+    }
+    
+    # Serialize the model
+    buffer = io.BytesIO()
+    pickle.dump(mock_model, buffer)
+    buffer.seek(0)
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename={model_id}_model.pkl"
+        }
+    )
+
+
+@api_router.post("/scientist/import-model")
+async def import_model(file: UploadFile = File(...)):
+    """Import a trained model file"""
+    try:
+        content = await file.read()
+        
+        # Validate file type
+        if not file.filename.endswith(('.pkl', '.h5', '.pt')):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Supported formats: .pkl, .h5, .pt"
+            )
+        
+        # In a real implementation, you would:
+        # 1. Validate the model structure
+        # 2. Test the model with sample data
+        # 3. Save to model registry
+        
+        return {
+            "status": "success",
+            "filename": file.filename,
+            "size": len(content),
+            "format": file.filename.split('.')[-1],
+            "message": f"Model {file.filename} imported successfully",
+            "model_info": {
+                "name": file.filename.replace('.pkl', '').replace('.h5', '').replace('.pt', ''),
+                "imported_at": "2026-02-09T12:00:00",
+                "status": "ready"
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
+
 
 # Include the router in the main app
 app.include_router(api_router)

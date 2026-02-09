@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, Marker, InfoWindow, Circle, Polygon } from '@react-google-maps/api';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { GoogleMap, useJsApiLoader, Marker, InfoWindow, Polygon } from '@react-google-maps/api';
 import { MapPin, AlertTriangle, Home, Navigation, Layers, X, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
@@ -12,6 +12,7 @@ const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || 'AIzaSyBRYE9Q6Y9Q9Q9Q9Q9Q9Q9Q9Q9Q9Q9Q9Q'; // Demo key
 
 // Move libraries outside component to prevent re-renders
+// Note: AdvancedMarkerElement is available in the core Maps API (v=weekly)
 const GOOGLE_MAPS_LIBRARIES = ['places'];
 
 const mapContainerStyle = {
@@ -30,6 +31,49 @@ const mapOptions = {
   streetViewControl: false,
   mapTypeControl: true,
   fullscreenControl: true,
+};
+
+// Helper function to create marker icons
+const createMarkerIcon = (type, data) => {
+  switch (type) {
+    case 'user':
+      return {
+        path: window.google?.maps?.SymbolPath?.CIRCLE || 0,
+        fillColor: '#3B82F6',
+        fillOpacity: 1,
+        strokeColor: '#FFFFFF',
+        strokeWeight: 3,
+        scale: 10,
+      };
+
+    case 'alert':
+      const color = data?.severity === 'critical' || data?.severity === 'red' ? '#EF4444' :
+                    data?.severity === 'warning' || data?.severity === 'orange' ? '#F59E0B' :
+                    data?.severity === 'info' || data?.severity === 'yellow' ? '#EAB308' : '#3B82F6';
+      return {
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+            <circle cx="20" cy="20" r="18" fill="${color}" stroke="white" stroke-width="3"/>
+            <text x="20" y="28" font-size="24" text-anchor="middle" fill="white" font-weight="bold">!</text>
+          </svg>
+        `)}`,
+        scaledSize: new window.google.maps.Size(40, 40),
+      };
+
+    case 'evacuation':
+      return {
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+            <circle cx="20" cy="20" r="18" fill="#10B981" stroke="white" stroke-width="3"/>
+            <text x="20" y="27" font-size="18" text-anchor="middle">🏠</text>
+          </svg>
+        `)}`,
+        scaledSize: new window.google.maps.Size(40, 40),
+      };
+
+    default:
+      return null;
+  }
 };
 
 const DisasterMap = () => {
@@ -210,16 +254,6 @@ const DisasterMap = () => {
     }
   };
 
-  const getSeverityIcon = (severity) => {
-    const iconUrl = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-        <circle cx="20" cy="20" r="18" fill="${getSeverityColor(severity)}" stroke="white" stroke-width="3"/>
-        <text x="20" y="28" font-size="24" text-anchor="middle" fill="white">!</text>
-      </svg>
-    `)}`;
-    return iconUrl;
-  };
-
   if (loadError) {
     return (
       <Card className="p-6">
@@ -324,15 +358,7 @@ const DisasterMap = () => {
           {userLocation && (
             <Marker
               position={userLocation}
-              icon={{
-                url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-                    <circle cx="20" cy="20" r="18" fill="#3B82F6" stroke="white" stroke-width="3"/>
-                    <circle cx="20" cy="20" r="6" fill="white"/>
-                  </svg>
-                `)}`,
-                scaledSize: new window.google.maps.Size(40, 40),
-              }}
+              icon={createMarkerIcon('user')}
               title="Your Location"
               onClick={() => setSelectedMarker({ type: 'user', data: { title: 'Your Location' } })}
             />
@@ -343,10 +369,7 @@ const DisasterMap = () => {
             <Marker
               key={alert.id}
               position={alert.position}
-              icon={{
-                url: getSeverityIcon(alert.severity),
-                scaledSize: new window.google.maps.Size(40, 40),
-              }}
+              icon={createMarkerIcon('alert', alert)}
               title={alert.title}
               onClick={() => setSelectedMarker({ type: 'alert', data: alert })}
             />
@@ -357,16 +380,7 @@ const DisasterMap = () => {
             <Marker
               key={center.id}
               position={center.position}
-              icon={{
-                url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-                    <circle cx="20" cy="20" r="18" fill="#10B981" stroke="white" stroke-width="3"/>
-                    <rect x="12" y="14" width="16" height="12" fill="white"/>
-                    <rect x="14" y="10" width="12" height="4" fill="white"/>
-                  </svg>
-                `)}`,
-                scaledSize: new window.google.maps.Size(40, 40),
-              }}
+              icon={createMarkerIcon('evacuation', center)}
               title={center.name}
               onClick={() => setSelectedMarker({ type: 'evacuation', data: center })}
             />

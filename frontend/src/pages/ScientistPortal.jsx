@@ -1,602 +1,530 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { 
-  Download, 
-  FileText, 
+import React, { useState } from 'react';
+import {
   Database,
-  BarChart3,
-  Key,
-  Code,
-  FileSpreadsheet,
-  FilePdf,
-  FileJson,
-  TrendingUp,
-  Activity,
-  Users,
-  AlertCircle,
-  RefreshCw,
-  Copy,
-  Check,
-  Calendar,
-  Filter
+  UploadCloud,
+  LineChart,
+  GitBranch,
+  Microscope,
+  FileText,
+  Download,
+  Upload,
+  Play,
+  Save,
+  FolderOpen,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from 'sonner';
-import { Progress } from "@/components/ui/progress";
 
 const ScientistPortal = () => {
-  const [apiKeyCopied, setApiKeyCopied] = useState(false);
-  const [selectedExportFormat, setSelectedExportFormat] = useState('csv');
-  const [exportingDatasets, setExportingDatasets] = useState(new Set());
-  const [apiKey, setApiKey] = useState(null);
-  const [apiKeyLoading, setApiKeyLoading] = useState(true);
+  const [uploadingData, setUploadingData] = useState(false);
+  const [runningSimulation, setRunningSimulation] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(null);
 
-  // Fetch API key securely from backend
-  useEffect(() => {
-    const fetchApiKey = async () => {
+  const handleUploadDataset = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,.json,.xlsx';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      setUploadingData(true);
+      const formData = new FormData();
+      formData.append('file', file);
+      
       try {
-        const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
-        const response = await fetch(`${API_URL}/scientist/api-key`, {
-          credentials: 'include' // Include cookies for auth
+        const response = await fetch('http://localhost:8000/api/scientist/upload-dataset', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include'
         });
         
-        if (!response.ok) {
-          throw new Error('Failed to fetch API key');
+        if (response.ok) {
+          toast.success(`Dataset "${file.name}" uploaded successfully`);
+        } else {
+          toast.error('Upload failed');
         }
-        
-        const data = await response.json();
-        setApiKey(data.api_key);
       } catch (error) {
-        console.error('Error fetching API key:', error);
-        toast.error('Failed to load API key. Please try again later.');
-        setApiKey(null);
+        toast.error('Error uploading dataset');
       } finally {
-        setApiKeyLoading(false);
+        setUploadingData(false);
       }
     };
-    
-    fetchApiKey();
-  }, []);
-
-  // Available datasets for export
-  const exportableDatasets = [
-    {
-      id: 'weather',
-      name: 'Weather Data',
-      description: 'Comprehensive weather observations and forecasts',
-      records: '1.2M',
-      lastUpdated: '2026-02-10',
-      size: '450 MB'
-    },
-    {
-      id: 'seismic',
-      name: 'Seismic Activity',
-      description: 'Earthquake records and seismograph data',
-      records: '85K',
-      lastUpdated: '2026-02-09',
-      size: '120 MB'
-    },
-    {
-      id: 'cyclone',
-      name: 'Cyclone Tracks',
-      description: 'Historical cyclone paths and intensity data',
-      records: '12K',
-      lastUpdated: '2026-02-08',
-      size: '35 MB'
-    },
-    {
-      id: 'flood',
-      name: 'Flood Zones',
-      description: 'Flood risk areas and historical flood data',
-      records: '240K',
-      lastUpdated: '2026-02-10',
-      size: '180 MB'
-    },
-    {
-      id: 'aqi',
-      name: 'Air Quality Index',
-      description: 'Real-time and historical air quality measurements',
-      records: '3.5M',
-      lastUpdated: '2026-02-10',
-      size: '680 MB'
-    }
-  ];
-
-  // Analytics stats
-  const analyticsData = {
-    totalDataPoints: '5.2M',
-    activeSensors: '1,234',
-    modelsDeployed: '18',
-    apiCalls30Days: '45,678',
-    accuracy: '94.2%',
-    uptime: '99.8%'
+    input.click();
   };
 
-  // Research tools
-  const tools = [
-    {
-      id: 1,
-      name: 'Predictive Model API',
-      description: 'Access our ML models for disaster prediction',
-      endpoint: '/api/v1/predict',
-      status: 'active'
-    },
-    {
-      id: 2,
-      name: 'Historical Data API',
-      description: 'Query historical disaster data',
-      endpoint: '/api/v1/historical',
-      status: 'active'
-    },
-    {
-      id: 3,
-      name: 'Real-time Alerts API',
-      description: 'Subscribe to real-time disaster alerts',
-      endpoint: '/api/v1/alerts/stream',
-      status: 'active'
-    },
-    {
-      id: 4,
-      name: 'Geospatial Analysis API',
-      description: 'Perform GIS operations on disaster data',
-      endpoint: '/api/v1/geospatial',
-      status: 'beta'
-    }
-  ];
-
-  const handleCopyApiKey = async () => {
+  const handleRunSimulation = async () => {
+    setRunningSimulation(true);
     try {
-      await navigator.clipboard.writeText(apiKey);
-      setApiKeyCopied(true);
-      toast.success('API key copied to clipboard');
-      setTimeout(() => setApiKeyCopied(false), 2000);
-    } catch (error) {
-      console.error('Failed to copy API key:', error);
-      
-      // Fallback: try using execCommand
-      try {
-        const textArea = document.createElement('textarea');
-        textArea.value = apiKey;
-        textArea.style.position = 'fixed';
-        textArea.style.opacity = '0';
-        document.body.appendChild(textArea);
-        textArea.select();
-        const successful = document.execCommand('copy');
-        document.body.removeChild(textArea);
-        
-        if (successful) {
-          setApiKeyCopied(true);
-          toast.success('API key copied to clipboard');
-          setTimeout(() => setApiKeyCopied(false), 2000);
-        } else {
-          throw new Error('execCommand failed');
-        }
-      } catch (fallbackError) {
-        toast.error('Failed to copy API key. Please copy it manually.');
-      }
-    }
-  };
-
-  const handleExportData = async (datasetId, format) => {
-    setExportingDatasets(prev => new Set(prev).add(datasetId));
-    toast.info(`Preparing ${format.toUpperCase()} export...`);
-    
-    // Simulate export process
-    setTimeout(() => {
-      setExportingDatasets(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(datasetId);
-        return newSet;
-      });
-      toast.success(`${datasetId} data exported successfully as ${format.toUpperCase()}!`);
-    }, 2000);
-  };
-
-  const handleRegenerateApiKey = async () => {
-    try {
-      const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
-      const response = await fetch(`${API_URL}/scientist/api-key/regenerate`, {
+      const response = await fetch('http://localhost:8000/api/scientist/run-simulation', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: selectedModel || 'flood_prediction',
+          parameters: {
+            timesteps: 100,
+            region: 'all'
+          }
+        }),
         credentials: 'include'
       });
       
-      if (!response.ok) {
-        throw new Error('Failed to regenerate API key');
+      if (response.ok) {
+        const result = await response.json();
+        toast.success(`Simulation completed: ${result.predictions_count} predictions generated`);
+      } else {
+        toast.error('Simulation failed');
       }
-      
-      const data = await response.json();
-      setApiKey(data.api_key);
-      toast.success('New API key generated! Update your applications.');
     } catch (error) {
-      console.error('Error regenerating API key:', error);
-      toast.error('Backend endpoint not implemented yet. Feature coming soon!');
+      toast.error('Error running simulation');
+    } finally {
+      setRunningSimulation(false);
     }
   };
 
-  return (
-    <div className="max-w-7xl mx-auto space-y-6 p-4">
-      {/* Header */}
-      <motion.div 
-        className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-900 p-6 rounded-xl border-2 shadow-lg"
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <div>
-          <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-            Scientist Research Portal
-          </h1>
-          <p className="text-muted-foreground mt-1 flex items-center gap-2">
-            <Database className="w-4 h-4" />
-            Advanced tools for disaster research and data analysis
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Badge variant="outline" className="px-4 py-2">
-            <Activity className="w-4 h-4 mr-2" />
-            API Status: Active
-          </Badge>
-          <Badge variant="secondary" className="px-4 py-2">
-            <Users className="w-4 h-4 mr-2" />
-            Researcher Level
-          </Badge>
-        </div>
-      </motion.div>
+  const handleExportModel = async (modelId) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/scientist/export-model/${modelId}`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${modelId}_model.pkl`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        toast.success('Model exported successfully');
+      }
+    } catch (error) {
+      toast.error('Error exporting model');
+    }
+  };
 
-      <Tabs defaultValue="export" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-6">
-          <TabsTrigger value="export" className="gap-2">
-            <Download className="w-4 h-4" />
-            Data Export
-          </TabsTrigger>
-          <TabsTrigger value="analytics" className="gap-2">
-            <BarChart3 className="w-4 h-4" />
-            Analytics
-          </TabsTrigger>
-          <TabsTrigger value="api" className="gap-2">
-            <Key className="w-4 h-4" />
-            API Access
-          </TabsTrigger>
+  const handleImportModel = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pkl,.h5,.pt';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      try {
+        const response = await fetch('http://localhost:8000/api/scientist/import-model', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include'
+        });
+        
+        if (response.ok) {
+          toast.success(`Model "${file.name}" imported successfully`);
+        } else {
+          toast.error('Import failed');
+        }
+      } catch (error) {
+        toast.error('Error importing model');
+      }
+    };
+    input.click();
+  };
+
+  const models = [
+    {
+      id: 'flood_prediction',
+      name: 'Flood Prediction Model v2.1',
+      type: 'Random Forest Regressor',
+      description: 'Predicts water levels based on rainfall intensity and upstream dam release data.',
+      accuracy: 94.2,
+      status: 'active'
+    },
+    {
+      id: 'cyclone_tracker',
+      name: 'Cyclone Path Predictor',
+      type: 'LSTM Neural Network',
+      description: 'Forecasts cyclone trajectory using historical satellite imagery and wind patterns.',
+      accuracy: 89.7,
+      status: 'active'
+    },
+    {
+      id: 'earthquake_early',
+      name: 'Earthquake Early Warning',
+      type: 'Ensemble Model',
+      description: 'Detects P-wave anomalies to provide 10-30 second advance warning before major seismic events.',
+      accuracy: 91.5,
+      status: 'training'
+    },
+    {
+      id: 'landslide_risk',
+      name: 'Landslide Risk Assessment',
+      type: 'Gradient Boosting',
+      description: 'Analyzes soil moisture, terrain slope, and recent rainfall to predict landslide probability.',
+      accuracy: 87.3,
+      status: 'active'
+    }
+  ];
+
+  return (
+    <div className="max-w-7xl mx-auto space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Scientist Research Hub</h1>
+          <p className="text-muted-foreground">Advanced data analysis, modeling, and prediction tools.</p>
+        </div>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            className="gap-2"
+            onClick={handleUploadDataset}
+            disabled={uploadingData}
+          >
+            {uploadingData ? (
+              <AlertCircle className="w-4 h-4 animate-spin" />
+            ) : (
+              <UploadCloud className="w-4 h-4" />
+            )}
+            {uploadingData ? 'Uploading...' : 'Upload Dataset'}
+          </Button>
+          <Button 
+            className="gap-2"
+            onClick={handleRunSimulation}
+            disabled={runningSimulation}
+          >
+            {runningSimulation ? (
+              <AlertCircle className="w-4 h-4 animate-spin" />
+            ) : (
+              <GitBranch className="w-4 h-4" />
+            )}
+            {runningSimulation ? 'Running...' : 'Run Simulation'}
+          </Button>
+        </div>
+      </div>
+
+      <Tabs defaultValue="analysis" className="w-full">
+        <TabsList className="mb-6">
+          <TabsTrigger value="analysis">Data Analysis</TabsTrigger>
+          <TabsTrigger value="models">Predictive Models</TabsTrigger>
+          <TabsTrigger value="simulation">Raw Simulation</TabsTrigger>
+          <TabsTrigger value="reports">Research Reports</TabsTrigger>
         </TabsList>
 
-        {/* Data Export Tab */}
-        <TabsContent value="export" className="space-y-6">
-          <Card className="border-2 shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5 text-green-600" />
-                Export Datasets
-              </CardTitle>
-              <CardDescription>
-                Download disaster data in multiple formats for your research
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {/* Export Format Selection */}
-              <div className="mb-6">
-                <label className="text-sm font-medium mb-3 block">Select Export Format</label>
-                <div className="flex gap-3">
-                  <Button
-                    variant={selectedExportFormat === 'csv' ? 'default' : 'outline'}
-                    onClick={() => setSelectedExportFormat('csv')}
-                    className="flex-1"
-                  >
-                    <FileSpreadsheet className="w-4 h-4 mr-2" />
-                    CSV
-                  </Button>
-                  <Button
-                    variant={selectedExportFormat === 'json' ? 'default' : 'outline'}
-                    onClick={() => setSelectedExportFormat('json')}
-                    className="flex-1"
-                  >
-                    <FileJson className="w-4 h-4 mr-2" />
-                    JSON
-                  </Button>
-                  <Button
-                    variant={selectedExportFormat === 'pdf' ? 'default' : 'outline'}
-                    onClick={() => setSelectedExportFormat('pdf')}
-                    className="flex-1"
-                  >
-                    <FilePdf className="w-4 h-4 mr-2" />
-                    PDF Report
-                  </Button>
+        <TabsContent value="analysis" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle>Timeseries Anomaly Detection</CardTitle>
+                <CardDescription>Real-time sensor data from monitoring stations.</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[400px] bg-muted/20 flex items-center justify-center border rounded-lg">
+                <div className="text-center text-muted-foreground">
+                  <LineChart className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>Interactive D3.js / Recharts Graph Area</p>
+                  <p className="text-xs mt-2">Showing PM2.5 spikes correlated with wind direction</p>
                 </div>
-              </div>
+              </CardContent>
+            </Card>
 
-              {/* Available Datasets */}
-              <div className="space-y-3">
-                {exportableDatasets.map((dataset, index) => (
-                  <motion.div
-                    key={dataset.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-lg">{dataset.name}</h3>
-                      <p className="text-sm text-muted-foreground mb-2">{dataset.description}</p>
-                      <div className="flex gap-4 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Database className="w-3 h-3" />
-                          {dataset.records} records
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <FileText className="w-3 h-3" />
-                          {dataset.size}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          Updated {dataset.lastUpdated}
-                        </span>
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Data Sources</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between p-3 border rounded-lg bg-card hover:bg-muted/50 transition-colors cursor-pointer">
+                    <div className="flex items-center gap-3">
+                      <Database className="w-4 h-4 text-primary" />
+                      <div>
+                        <p className="text-sm font-medium">IMD Weather API</p>
+                        <p className="text-xs text-muted-foreground">Live Stream • 50ms latency</p>
                       </div>
                     </div>
-                    <Button
-                      onClick={() => handleExportData(dataset.id, selectedExportFormat)}
-                      disabled={exportingDatasets.has(dataset.id)}
-                      className="ml-4"
-                    >
-                      {exportingDatasets.has(dataset.id) ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                          Exporting...
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-4 h-4 mr-2" />
-                          Export
-                        </>
-                      )}
-                    </Button>
-                  </motion.div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Analytics Tab */}
-        <TabsContent value="analytics" className="space-y-6">
-          {/* Overview Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0 }}
-            >
-              <Card className="border-2 shadow-md">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Total Data Points
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-blue-600">{analyticsData.totalDataPoints}</div>
-                  <p className="text-xs text-muted-foreground mt-1">Across all datasets</p>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.1 }}
-            >
-              <Card className="border-2 shadow-md">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Active Sensors
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-green-600">{analyticsData.activeSensors}</div>
-                  <p className="text-xs text-muted-foreground mt-1">Live data streams</p>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.2 }}
-            >
-              <Card className="border-2 shadow-md">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Model Accuracy
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold text-purple-600">{analyticsData.accuracy}</div>
-                  <p className="text-xs text-muted-foreground mt-1">Prediction accuracy</p>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
-
-          {/* System Performance */}
-          <Card className="border-2 shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-blue-600" />
-                System Performance
-              </CardTitle>
-              <CardDescription>Real-time analytics and metrics</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="font-medium">API Uptime (30 days)</span>
-                  <span className="font-bold text-green-600">{analyticsData.uptime}</span>
-                </div>
-                <Progress value={99.8} className="h-2" />
-              </div>
-
-              <div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="font-medium">Data Processing Rate</span>
-                  <span className="font-bold text-blue-600">2,340 records/sec</span>
-                </div>
-                <Progress value={78} className="h-2" />
-              </div>
-
-              <div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="font-medium">Storage Utilization</span>
-                  <span className="font-bold text-purple-600">4.2 TB / 10 TB</span>
-                </div>
-                <Progress value={42} className="h-2" />
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{analyticsData.modelsDeployed}</div>
-                  <div className="text-xs text-muted-foreground">ML Models</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{analyticsData.apiCalls30Days}</div>
-                  <div className="text-xs text-muted-foreground">API Calls (30d)</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">156</div>
-                  <div className="text-xs text-muted-foreground">Data Sources</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">24/7</div>
-                  <div className="text-xs text-muted-foreground">Monitoring</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* API Access Tab */}
-        <TabsContent value="api" className="space-y-6">
-          {/* API Key Management */}
-          <Card className="border-2 shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Key className="w-5 h-5 text-yellow-600" />
-                API Key Management
-              </CardTitle>
-              <CardDescription>
-                Manage your API credentials and access tokens
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">Your API Key</label>
-                <div className="flex gap-2">
-                  <div className="flex-1 p-3 bg-muted rounded-md font-mono text-sm break-all">
-                    {apiKeyLoading ? 'Loading...' : apiKey ? `${apiKey.slice(0, 12)}...${apiKey.slice(-8)}` : 'Failed to load API key'}
+                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
                   </div>
-                  <Button
-                    variant="outline"
-                    onClick={handleCopyApiKey}
-                    disabled={!apiKey || apiKeyLoading}
-                  >
-                    {apiKeyCopied ? (
-                      <Check className="w-4 h-4" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" />
-                  Keep your API key secure. Never share it publicly.
-                </p>
-              </div>
+                  <div className="flex items-center justify-between p-3 border rounded-lg bg-card hover:bg-muted/50 transition-colors cursor-pointer">
+                    <div className="flex items-center gap-3">
+                      <Database className="w-4 h-4 text-primary" />
+                      <div>
+                        <p className="text-sm font-medium">IoT Sensor Grid A</p>
+                        <p className="text-xs text-muted-foreground">Updated 2m ago</p>
+                      </div>
+                    </div>
+                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                  </div>
+                  <div className="flex items-center justify-between p-3 border rounded-lg bg-card hover:bg-muted/50 transition-colors cursor-pointer">
+                    <div className="flex items-center gap-3">
+                      <Database className="w-4 h-4 text-primary" />
+                      <div>
+                        <p className="text-sm font-medium">Historical Flood Data</p>
+                        <p className="text-xs text-muted-foreground">Static Dataset (CSV)</p>
+                      </div>
+                    </div>
+                    <div className="w-2 h-2 rounded-full bg-gray-300"></div>
+                  </div>
+                </CardContent>
+              </Card>
 
-              <div className="flex gap-3 pt-4 border-t">
-                <Button variant="outline" onClick={handleRegenerateApiKey}>
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Regenerate Key
-                </Button>
-                <Button variant="outline">
-                  <FileText className="w-4 h-4 mr-2" />
-                  View Usage Logs
+              <Card>
+                <CardHeader>
+                  <CardTitle>Quick Tools</CardTitle>
+                </CardHeader>
+                <CardContent className="grid grid-cols-2 gap-2">
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <FileText className="w-5 h-5" />
+                    Export CSV
+                  </Button>
+                  <Button variant="outline" className="h-20 flex flex-col gap-2">
+                    <Download className="w-5 h-5" />
+                    Download Report
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="models">
+          <div className="mb-6 flex justify-end">
+            <Button 
+              variant="outline" 
+              className="gap-2"
+              onClick={handleImportModel}
+            >
+              <Upload className="w-4 h-4" />
+              Import Model
+            </Button>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+            {models.map((model) => (
+              <Card 
+                key={model.id}
+                className="hover:border-primary/50 transition-colors cursor-pointer"
+                onClick={() => setSelectedModel(model.id)}
+              >
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Microscope className="w-5 h-5 text-primary" />
+                    {model.name}
+                  </CardTitle>
+                  <CardDescription>{model.type}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground mb-4">{model.description}</p>
+                  <div className="flex justify-between items-center text-sm mb-4">
+                    <span className="font-medium">Accuracy: {model.accuracy}%</span>
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      model.status === 'active' 
+                        ? 'bg-green-100 text-green-700' 
+                        : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {model.status === 'active' ? (
+                        <><CheckCircle className="w-3 h-3 inline mr-1" />Active</>
+                      ) : (
+                        <><AlertCircle className="w-3 h-3 inline mr-1" />Training</>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="flex-1">
+                      <Play className="w-4 h-4 mr-1" />
+                      Run Model
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleExportModel(model.id);
+                      }}
+                    >
+                      <Save className="w-4 h-4 mr-1" />
+                      Export
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="simulation" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Raw Data Simulation</CardTitle>
+              <CardDescription>Run custom simulations with uploaded datasets and models</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h3 className="font-semibold mb-3">Simulation Parameters</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">Select Model</label>
+                      <select className="w-full p-2 border rounded">
+                        <option>Flood Prediction Model v2.1</option>
+                        <option>Cyclone Path Predictor</option>
+                        <option>Earthquake Early Warning</option>
+                        <option>Landslide Risk Assessment</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">Region</label>
+                      <select className="w-full p-2 border rounded">
+                        <option>All Regions</option>
+                        <option>North India</option>
+                        <option>Coastal Areas</option>
+                        <option>Himalayan Belt</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">Time Steps</label>
+                      <input 
+                        type="number" 
+                        defaultValue={100} 
+                        className="w-full p-2 border rounded"
+                        min="10"
+                        max="1000"
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                <div>
+                  <h3 className="font-semibold mb-3">Data Sources</h3>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 border rounded">
+                      <span className="text-sm">Historical Weather Data</span>
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                    </div>
+                    <div className="flex items-center justify-between p-3 border rounded">
+                      <span className="text-sm">Sensor Grid Readings</span>
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                    </div>
+                    <div className="flex items-center justify-between p-3 border rounded">
+                      <span className="text-sm">Satellite Imagery</span>
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                    </div>
+                    <Button variant="outline" className="w-full mt-2">
+                      <FolderOpen className="w-4 h-4 mr-2" />
+                      Add Custom Dataset
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-6 pt-6 border-t">
+                <Button 
+                  className="w-full" 
+                  size="lg"
+                  onClick={handleRunSimulation}
+                  disabled={runningSimulation}
+                >
+                  {runningSimulation ? (
+                    <>
+                      <AlertCircle className="w-5 h-5 mr-2 animate-spin" />
+                      Running Simulation...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-5 h-5 mr-2" />
+                      Start Simulation
+                    </>
+                  )}
                 </Button>
               </div>
             </CardContent>
           </Card>
 
-          {/* Available APIs */}
-          <Card className="border-2 shadow-lg">
+          {/* Simulation Results */}
+          <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Code className="w-5 h-5 text-blue-600" />
-                Available Research APIs
-              </CardTitle>
-              <CardDescription>
-                Access our comprehensive disaster data and prediction services
-              </CardDescription>
+              <CardTitle>Recent Simulations</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {tools.map((tool, index) => (
-                  <motion.div
-                    key={tool.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold">{tool.name}</h3>
-                          <Badge variant={tool.status === 'active' ? 'default' : 'secondary'}>
-                            {tool.status}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground mb-2">{tool.description}</p>
-                        <code className="text-xs bg-muted px-2 py-1 rounded">
-                          {tool.endpoint}
-                        </code>
-                      </div>
-                      <Button variant="outline" size="sm" className="ml-4">
-                        <FileText className="w-4 h-4 mr-2" />
-                        Docs
-                      </Button>
-                    </div>
-                  </motion.div>
-                ))}
+                <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+                  <div>
+                    <p className="font-medium">Flood Prediction - Delhi NCR</p>
+                    <p className="text-sm text-muted-foreground">Completed 2 hours ago • 500 predictions</p>
+                  </div>
+                  <Button variant="outline" size="sm">
+                    <Download className="w-4 h-4 mr-1" />
+                    Download
+                  </Button>
+                </div>
+                <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+                  <div>
+                    <p className="font-medium">Cyclone Track - Bay of Bengal</p>
+                    <p className="text-sm text-muted-foreground">Completed 1 day ago • 1,200 predictions</p>
+                  </div>
+                  <Button variant="outline" size="sm">
+                    <Download className="w-4 h-4 mr-1" />
+                    Download
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
 
-          {/* Quick Start Code */}
-          <Card className="border-2 shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Code className="w-5 h-5 text-green-600" />
-                Quick Start Code
-              </CardTitle>
-              <CardDescription>Sample code to get started with our API</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <pre className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-sm">
-                {`import requests
+        <TabsContent value="reports">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Card className="hover:border-primary/50 transition-colors cursor-pointer">
+              <CardHeader>
+                <CardTitle>Monsoon Impact Analysis 2025</CardTitle>
+                <CardDescription>Comprehensive flood risk assessment</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Based on 3 months of simulation data across 12 states
+                </p>
+                <Button variant="outline" className="w-full">
+                  <Download className="w-4 h-4 mr-2" />
+                  Download PDF
+                </Button>
+              </CardContent>
+            </Card>
 
-# Set your API key
-API_KEY = "<YOUR_API_KEY_HERE>"
-BASE_URL = "https://api.suraksha-setu.com"
+            <Card className="hover:border-primary/50 transition-colors cursor-pointer">
+              <CardHeader>
+                <CardTitle>Seismic Activity Report Q1</CardTitle>
+                <CardDescription>Earthquake prediction accuracy metrics</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Analysis of 247 seismic events and model performance
+                </p>
+                <Button variant="outline" className="w-full">
+                  <Download className="w-4 h-4 mr-2" />
+                  Download PDF
+                </Button>
+              </CardContent>
+            </Card>
 
-# Example: Get earthquake predictions
-response = requests.get(
-    f"{BASE_URL}/api/v1/predict/earthquake",
-    headers={"Authorization": f"Bearer {API_KEY}"}
-)
-
-data = response.json()
-print(f"Prediction: {data['risk_level']}")
-print(f"Confidence: {data['confidence']}%")`}
-              </pre>
-            </CardContent>
-          </Card>
+            <Card className="hover:border-primary/50 transition-colors cursor-pointer">
+              <CardHeader>
+                <CardTitle>Cyclone Pattern Study</CardTitle>
+                <CardDescription>Historical trajectory analysis</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  10-year cyclone data with prediction model validation
+                </p>
+                <Button variant="outline" className="w-full">
+                  <Download className="w-4 h-4 mr-2" />
+                  Download PDF
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
