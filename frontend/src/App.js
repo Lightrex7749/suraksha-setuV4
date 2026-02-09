@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { LocationProvider } from "@/contexts/LocationContext";
+import { ErrorBoundary } from "@/components/errors/ErrorBoundary";
 import MainLayout from "@/components/layout/MainLayout";
 import PWAInstallPrompt from "@/components/pwa/PWAInstallPrompt";
 import OfflineIndicator from "@/components/pwa/OfflineIndicator";
@@ -13,18 +14,20 @@ import Alerts from "@/pages/Alerts";
 import Weather from "@/pages/Weather";
 import Disasters from "@/pages/Disasters";
 import Community from "@/pages/Community";
+import Analytics from "@/pages/Analytics";
 import StudentPortal from "@/pages/StudentPortal";
 import ScientistPortal from "@/pages/ScientistPortal";
 import AdminDashboard from "@/pages/AdminDashboard";
 
 function App() {
   return (
-    <AuthProvider>
-      <LocationProvider>
-        <Toaster position="top-right" richColors closeButton />
-        <OfflineIndicator />
-        <PWAInstallPrompt />
-        <BrowserRouter>
+    <ErrorBoundary>
+      <AuthProvider>
+        <LocationProvider>
+          <Toaster position="top-right" richColors closeButton />
+          <OfflineIndicator />
+          <PWAInstallPrompt />
+          <BrowserRouter>
           <Routes>
             {/* Landing Page */}
             <Route path="/" element={<Landing />} />
@@ -38,6 +41,7 @@ function App() {
               <Route path="weather" element={<Weather />} />
               <Route path="disasters" element={<Disasters />} />
               <Route path="community" element={<Community />} />
+              <Route path="analytics" element={<Analytics />} />
               <Route path="student" element={<StudentPortal />} />
               <Route path="scientist" element={<ScientistPortal />} />
               <Route path="admin" element={<AdminDashboard />} />
@@ -52,6 +56,7 @@ function App() {
           </Routes>
         </BrowserRouter>
       </LocationProvider>
+    </ErrorBoundary>
     </AuthProvider>
   );
 }

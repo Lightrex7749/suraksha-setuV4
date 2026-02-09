@@ -111,3 +111,13 @@
   height: 100%;
   z-index: 0;
 }
+
+/* Shimmer Animation for Skeletons */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}

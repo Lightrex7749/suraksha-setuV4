@@ -8,6 +8,8 @@ import ImpactStats from '@/components/dashboard/ImpactStats';
 import LiveAQIChart from '@/components/dashboard/LiveAQIChart';
 import LocationSelector from '@/components/location/LocationSelector';
 import NotificationSettings from '@/components/notifications/NotificationSettings';
+import { SectionErrorBoundary } from '@/components/errors/ErrorBoundary';
+import { SkeletonCard, SkeletonDashboard } from '@/components/ui/skeleton-loaders';
 import { Button } from "@/components/ui/button";
 import { Download, Share2, RefreshCw, TrendingUp } from 'lucide-react';
 import axios from 'axios';
@@ -19,10 +21,12 @@ const Dashboard = () => {
   const [recommendations, setRecommendations] = useState([]);
   const [score, setScore] = useState(78);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchRecommendations = async () => {
       try {
+        setIsLoading(true);
         const weatherRes = await axios.get(`${API_URL}/weather/auto-detect`);
         const weather = weatherRes.data.current;
         
@@ -104,6 +108,8 @@ const Dashboard = () => {
             text: 'Keep emergency contacts handy.'
           }
         ]);
+      } finally {
+        setIsLoading(false);
       }
     };
     
@@ -117,6 +123,14 @@ const Dashboard = () => {
     await fetchRecommendations();
     setTimeout(() => setIsRefreshing(false), 1000);
   };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6 max-w-7xl mx-auto p-4">
+        <SkeletonDashboard />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto p-4">
