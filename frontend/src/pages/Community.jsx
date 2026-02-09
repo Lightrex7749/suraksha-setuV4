@@ -1,188 +1,637 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
 import { 
-  MessageSquare, 
-  ThumbsUp, 
-  MapPin, 
-  Camera, 
-  AlertTriangle,
-  Award,
-  Heart,
-  Share2
+  Plus, Filter, Search, TrendingUp, 
+  Award, Heart, Users, MapPin, 
+  AlertCircle, HelpCircle, Megaphone,
+  Clock, ThumbsUp as ThumbsUpIcon
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-
-const CommunityPost = ({ author, time, content, type, likes, location, image }) => (
-  <Card className="mb-4">
-    <CardContent className="p-4">
-      <div className="flex justify-between items-start mb-3">
-        <div className="flex items-center gap-3">
-          <Avatar>
-            <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${author}`} />
-            <AvatarFallback>{author[0]}</AvatarFallback>
-          </Avatar>
-          <div>
-            <h4 className="font-semibold text-sm">{author}</h4>
-            <p className="text-xs text-muted-foreground">{time}</p>
-          </div>
-        </div>
-        <Badge variant={type === 'Emergency' ? 'destructive' : 'secondary'}>
-          {type}
-        </Badge>
-      </div>
-      
-      <p className="text-sm text-foreground mb-3">{content}</p>
-      
-      {image && (
-        <div className="mb-3 rounded-lg overflow-hidden h-48 bg-muted">
-          <img src={image} alt="Report" className="w-full h-full object-cover" />
-        </div>
-      )}
-
-      <div className="flex items-center gap-4 text-sm text-muted-foreground border-t pt-3">
-        <button className="flex items-center gap-1 hover:text-primary transition-colors">
-          <ThumbsUp className="w-4 h-4" /> {likes}
-        </button>
-        <button className="flex items-center gap-1 hover:text-primary transition-colors">
-          <MessageSquare className="w-4 h-4" /> Comment
-        </button>
-        <div className="flex items-center gap-1 ml-auto">
-          <MapPin className="w-3 h-3" /> {location}
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-);
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+import CommunityPost from '@/components/community/CommunityPost';
+import CreatePostModal from '@/components/community/CreatePostModal';
 
 const Community = () => {
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [posts, setPosts] = useState([]);
+  const [filteredPosts, setFilteredPosts] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const [sortBy, setSortBy] = useState('recent');
+  const [activeTab, setActiveTab] = useState('feed');
+
+  // Initialize with sample posts
+  useEffect(() => {
+    const samplePosts = [
+      {
+        id: '1',
+        userId: 'user1',
+        author: 'Rahul Sharma',
+        timestamp: new Date(Date.now() - 600000).toISOString(), // 10 mins ago
+        title: 'Water Logging Alert',
+        content: 'Water logging near Sector 5 main road. Avoid this route if possible. Water level is above knee height. Several vehicles are stuck. Emergency services have been notified.',
+        type: 'alert',
+        location: 'Sector 5, Bhubaneswar',
+        geolocation: { latitude: 20.2961, longitude: 85.8245 },
+        tags: ['flood', 'traffic', 'sector5'],
+        media: [
+          {
+            id: 'm1',
+            type: 'image/jpeg',
+            preview: 'https://images.unsplash.com/photo-1549888983-47e363b482bc?auto=format&fit=crop&q=80&w=800',
+            name: 'waterlogging.jpg',
+            size: 245000,
+            file: null,
+            geotag: { latitude: 20.2961, longitude: 85.8245, accuracy: 15 }
+          }
+        ],
+        likes: 24,
+        likedByUser: false,
+        savedByUser: false,
+        comments: [
+          {
+            id: 'c1',
+            userId: 'user2',
+            author: 'Priya Das',
+            content: 'Thanks for the update! Taking alternate route.',
+            timestamp: new Date(Date.now() - 300000).toISOString(),
+            likes: 3,
+            likedByUser: false,
+            replies: [],
+            edited: false
+          }
+        ]
+      },
+      {
+        id: '2',
+        userId: 'user3',
+        author: 'Priya Das',
+        timestamp: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+        title: 'Emergency: Fallen Tree',
+        content: 'Fallen tree blocking the entrance to the colony. Electricity wires are also down. Please send help! Situation is critical.',
+        type: 'emergency',
+        location: 'Unit 4, Cuttack',
+        geolocation: { latitude: 20.4625, longitude: 85.8830 },
+        tags: ['emergency', 'electricity', 'tree'],
+        media: [],
+        likes: 56,
+        likedByUser: false,
+        savedByUser: false,
+        comments: []
+      },
+      {
+        id: '3',
+        userId: 'user4',
+        author: 'Volunteer Group A',
+        timestamp: new Date(Date.now() - 7200000).toISOString(), // 2 hours ago
+        title: 'Food Distribution',
+        content: 'We are distributing food packets and water bottles at the Community Center. Anyone in need please come. Distribution until 8 PM.',
+        type: 'offer',
+        location: 'Community Center, Bhubaneswar',
+        geolocation: { latitude: 20.2961, longitude: 85.8245 },
+        tags: ['food', 'water', 'help', 'relief'],
+        media: [],
+        likes: 142,
+        likedByUser: true,
+        savedByUser: false,
+        comments: [
+          {
+            id: 'c2',
+            userId: 'user5',
+            author: 'Amit Kumar',
+            content: 'Great work! How can I volunteer?',
+            timestamp: new Date(Date.now() - 6000000).toISOString(),
+            likes: 5,
+            likedByUser: false,
+            replies: [
+              {
+                id: 'c2r1',
+                userId: 'user4',
+                author: 'Volunteer Group A',
+                content: 'Come to the center, we need all the help we can get!',
+                timestamp: new Date(Date.now() - 5400000).toISOString(),
+                likes: 2,
+                likedByUser: false,
+                replies: [],
+                edited: false
+              }
+            ],
+            edited: false
+          }
+        ]
+      },
+      {
+        id: '4',
+        userId: 'user6',
+        author: 'Sunita Patel',
+        timestamp: new Date(Date.now() - 14400000).toISOString(), // 4 hours ago
+        content: 'Looking for temporary shelter for my family (4 people). Our house has been flooded. Any leads would be appreciated.',
+        type: 'help',
+        location: 'Saheed Nagar, Bhubaneswar',
+        geolocation: { latitude: 20.2961, longitude: 85.8245 },
+        tags: ['shelter', 'help', 'urgent'],
+        media: [],
+        likes: 89,
+        likedByUser: false,
+        savedByUser: true,
+        comments: []
+      }
+    ];
+    setPosts(samplePosts);
+    setFilteredPosts(samplePosts);
+  }, []);
+
+  // Filter and search posts
+  useEffect(() => {
+    let filtered = [...posts];
+
+    // Apply type filter
+    if (filterType !== 'all') {
+      filtered = filtered.filter(post => post.type === filterType);
+    }
+
+    // Apply search
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(post => 
+        post.content.toLowerCase().includes(query) ||
+        post.title?.toLowerCase().includes(query) ||
+        post.author.toLowerCase().includes(query) ||
+        post.location.toLowerCase().includes(query) ||
+        post.tags?.some(tag => tag.toLowerCase().includes(query))
+      );
+    }
+
+    // Apply sorting
+    switch (sortBy) {
+      case 'recent':
+        filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        break;
+      case 'popular':
+        filtered.sort((a, b) => b.likes - a.likes);
+        break;
+      case 'commented':
+        filtered.sort((a, b) => (b.comments?.length || 0) - (a.comments?.length || 0));
+        break;
+      default:
+        break;
+    }
+
+    setFilteredPosts(filtered);
+  }, [posts, filterType, searchQuery, sortBy]);
+
+  const handlePostCreated = (newPost) => {
+    setPosts([newPost, ...posts]);
+  };
+
+  const handlePostLike = (postId, liked) => {
+    setPosts(posts.map(post => 
+      post.id === postId 
+        ? { ...post, likedByUser: liked, likes: liked ? post.likes + 1 : post.likes - 1 }
+        : post
+    ));
+  };
+
+  const handlePostSave = (postId, saved) => {
+    setPosts(posts.map(post => 
+      post.id === postId 
+        ? { ...post, savedByUser: saved }
+        : post
+    ));
+  };
+
+  const handlePostDelete = (postId) => {
+    if (confirm('Are you sure you want to delete this post?')) {
+      setPosts(posts.filter(post => post.id !== postId));
+    }
+  };
+
+  const handlePostShare = (postId) => {
+    console.log('Shared post:', postId);
+  };
+
+  const savedPosts = posts.filter(post => post.savedByUser);
+  const myPosts = posts.filter(post => post.author === 'You');
+
+  const getStatsData = () => {
+    return {
+      totalPosts: posts.length,
+      totalHelps: posts.filter(p => p.type === 'help').length,
+      totalOffers: posts.filter(p => p.type === 'offer').length,
+      totalAlerts: posts.filter(p => p.type === 'alert' || p.type === 'emergency').length,
+    };
+  };
+
+  const stats = getStatsData();
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Community Hub</h1>
-          <p className="text-muted-foreground">Connect, report, and help your neighbors.</p>
+          <p className="text-muted-foreground">Connect, report, and help your neighbors</p>
         </div>
-        <Button className="gap-2">
-          <Heart className="w-4 h-4" /> I Can Help
+        <Button 
+          className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+          onClick={() => setIsCreateModalOpen(true)}
+        >
+          <Plus className="w-4 h-4" /> Create Post
         </Button>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
+              <Users className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{stats.totalPosts}</p>
+              <p className="text-xs text-muted-foreground">Total Posts</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-lg">
+              <HelpCircle className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{stats.totalHelps}</p>
+              <p className="text-xs text-muted-foreground">Help Needed</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="p-2 bg-green-100 dark:bg-green-900/20 rounded-lg">
+              <Megaphone className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{stats.totalOffers}</p>
+              <p className="text-xs text-muted-foreground">Help Offered</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg">
+              <AlertCircle className="w-5 h-5 text-orange-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{stats.totalAlerts}</p>
+              <p className="text-xs text-muted-foreground">Active Alerts</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Feed */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Create Post */}
+          {/* Filters and Search */}
           <Card>
-            <CardContent className="p-4">
-              <div className="flex gap-4">
-                <Avatar>
-                  <AvatarFallback>ME</AvatarFallback>
-                </Avatar>
-                <div className="flex-1 space-y-3">
-                  <Textarea placeholder="Report an issue or ask for help..." className="min-h-[80px]" />
-                  <div className="flex justify-between items-center">
-                    <div className="flex gap-2">
-                      <Button variant="ghost" size="icon" className="text-muted-foreground">
-                        <Camera className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="text-muted-foreground">
-                        <MapPin className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    <Button size="sm">Post Report</Button>
-                  </div>
-                </div>
+            <CardContent className="p-4 space-y-4">
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search posts, tags, locations..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+
+              {/* Filters */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Select value={filterType} onValueChange={setFilterType}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Filter by type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Posts</SelectItem>
+                    <SelectItem value="general">General</SelectItem>
+                    <SelectItem value="help">Help Requests</SelectItem>
+                    <SelectItem value="offer">Offerings</SelectItem>
+                    <SelectItem value="alert">Alerts</SelectItem>
+                    <SelectItem value="emergency">Emergency</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="recent">Most Recent</SelectItem>
+                    <SelectItem value="popular">Most Popular</SelectItem>
+                    <SelectItem value="commented">Most Commented</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>
 
-          {/* Feed Items */}
-          <CommunityPost 
-            author="Rahul Sharma"
-            time="10 mins ago"
-            content="Water logging near Sector 5 main road. Avoid this route if possible. Water level is above knee height."
-            type="Alert"
-            likes={24}
-            location="Sector 5, Bhubaneswar"
-            image="https://images.unsplash.com/photo-1549888983-47e363b482bc?auto=format&fit=crop&q=80&w=800"
-          />
-          <CommunityPost 
-            author="Priya Das"
-            time="1 hour ago"
-            content="Fallen tree blocking the entrance to the colony. Electricity wires are also down. Please send help!"
-            type="Emergency"
-            likes={56}
-            location="Unit 4, Cuttack"
-          />
-          <CommunityPost 
-            author="Volunteer Group A"
-            time="2 hours ago"
-            content="We are distributing food packets and water bottles at the Community Center. Anyone in need please come."
-            type="Help"
-            likes={142}
-            location="Community Center"
-          />
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="feed">Feed</TabsTrigger>
+              <TabsTrigger value="saved">Saved ({savedPosts.length})</TabsTrigger>
+              <TabsTrigger value="my-posts">My Posts ({myPosts.length})</TabsTrigger>
+            </TabsList>
+
+            {/* Feed Tab */}
+            <TabsContent value="feed" className="space-y-4 mt-6">
+              {filteredPosts.length > 0 ? (
+                filteredPosts.map((post) => (
+                  <CommunityPost
+                    key={post.id}
+                    post={post}
+                    onLike={handlePostLike}
+                    onDelete={handlePostDelete}
+                    onShare={handlePostShare}
+                    onSave={handlePostSave}
+                  />
+                ))
+              ) : (
+                <Card>
+                  <CardContent className="p-12 text-center">
+                    <Search className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground">
+                      {searchQuery ? 'No posts found matching your search' : 'No posts to display'}
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            {/* Saved Tab */}
+            <TabsContent value="saved" className="space-y-4 mt-6">
+              {savedPosts.length > 0 ? (
+                savedPosts.map((post) => (
+                  <CommunityPost
+                    key={post.id}
+                    post={post}
+                    onLike={handlePostLike}
+                    onDelete={handlePostDelete}
+                    onShare={handlePostShare}
+                    onSave={handlePostSave}
+                  />
+                ))
+              ) : (
+                <Card>
+                  <CardContent className="p-12 text-center">
+                    <Heart className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground">No saved posts yet</p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            {/* My Posts Tab */}
+            <TabsContent value="my-posts" className="space-y-4 mt-6">
+              {myPosts.length > 0 ? (
+                myPosts.map((post) => (
+                  <CommunityPost
+                    key={post.id}
+                    post={post}
+                    onLike={handlePostLike}
+                    onDelete={handlePostDelete}
+                    onShare={handlePostShare}
+                    onSave={handlePostSave}
+                  />
+                ))
+              ) : (
+                <Card>
+                  <CardContent className="p-12 text-center">
+                    <Plus className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground mb-4">You haven't created any posts yet</p>
+                    <Button onClick={() => setIsCreateModalOpen(true)}>
+                      Create Your First Post
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+          </Tabs>
         </div>
 
         {/* Sidebar */}
         <div className="space-y-6">
+          {/* Quick Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Button 
+                className="w-full justify-start gap-2 bg-red-500 hover:bg-red-600"
+                onClick={() => {
+                  setIsCreateModalOpen(true);
+                  // Could auto-select emergency type
+                }}
+              >
+                <AlertCircle className="w-4 h-4" />
+                Report Emergency
+              </Button>
+              <Button 
+                variant="outline" 
+                className="w-full justify-start gap-2"
+                onClick={() => setIsCreateModalOpen(true)}
+              >
+                <HelpCircle className="w-4 h-4" />
+                Request Help
+              </Button>
+              <Button 
+                variant="outline" 
+                className="w-full justify-start gap-2"
+                onClick={() => setIsCreateModalOpen(true)}
+              >
+                <Heart className="w-4 h-4" />
+                Offer Help
+              </Button>
+            </CardContent>
+          </Card>
+
           {/* Leaderboard */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-base">
                 <Award className="w-5 h-5 text-yellow-500" />
                 Local Heroes
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {[1, 2, 3].map((i) => (
+              {[
+                { name: 'Rahul Sharma', posts: 87, rank: 1 },
+                { name: 'Priya Das', posts: 65, rank: 2 },
+                { name: 'Volunteer Group A', posts: 52, rank: 3 }
+              ].map((hero, i) => (
                 <div key={i} className="flex items-center gap-3">
-                  <div className="font-bold text-muted-foreground w-4">{i}</div>
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback>H{i}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Hero User {i}</p>
-                    <p className="text-xs text-muted-foreground">50+ verified reports</p>
+                  <div className={cn(
+                    "font-bold w-6 h-6 flex items-center justify-center rounded-full text-xs",
+                    i === 0 && "bg-yellow-100 text-yellow-700",
+                    i === 1 && "bg-gray-100 text-gray-700",
+                    i === 2 && "bg-orange-100 text-orange-700"
+                  )}>
+                    {hero.rank}
                   </div>
-                  <Badge variant="outline" className="text-yellow-600 bg-yellow-50 border-yellow-200">
-                    Top 1%
-                  </Badge>
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${hero.name}`} />
+                    <AvatarFallback>{hero.name[0]}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{hero.name}</p>
+                    <p className="text-xs text-muted-foreground">{hero.posts} helpful posts</p>
+                  </div>
+                  {i === 0 && (
+                    <Badge variant="outline" className="text-yellow-600 bg-yellow-50 border-yellow-200 text-[10px]">
+                      Top Hero
+                    </Badge>
+                  )}
                 </div>
               ))}
             </CardContent>
           </Card>
 
-          {/* Needs & Offers */}
+          {/* Trending Topics */}
           <Card>
             <CardHeader>
-              <CardTitle>Needs & Offers</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <TrendingUp className="w-5 h-5" />
+                Trending Topics
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {[
+                { tag: 'flood', count: 45 },
+                { tag: 'shelter', count: 32 },
+                { tag: 'emergency', count: 28 },
+                { tag: 'food', count: 21 },
+                { tag: 'electricity', count: 18 }
+              ].map((topic, i) => (
+                <button
+                  key={i}
+                  onClick={() => setSearchQuery(topic.tag)}
+                  className="flex items-center justify-between w-full p-2 rounded-lg hover:bg-accent transition-colors text-left"
+                >
+                  <span className="text-sm font-medium">#{topic.tag}</span>
+                  <Badge variant="secondary" className="text-xs">
+                    {topic.count}
+                  </Badge>
+                </button>
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* Urgent Needs & Offers */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Urgent Needs & Offers</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* Help Needed */}
               <div className="p-3 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-lg">
-                <div className="flex justify-between items-start mb-1">
-                  <span className="text-xs font-bold text-red-600">NEED</span>
+                <div className="flex justify-between items-start mb-2">
+                  <Badge className="text-xs bg-red-600">NEED</Badge>
                   <span className="text-[10px] text-muted-foreground">5m ago</span>
                 </div>
-                <p className="text-sm font-medium">Urgent: Insulin for diabetic patient</p>
-                <Button size="sm" variant="link" className="h-auto p-0 text-red-600">Contact</Button>
+                <p className="text-sm font-medium mb-1">Urgent: Insulin for diabetic patient</p>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
+                  <MapPin className="w-3 h-3" />
+                  <span>Saheed Nagar</span>
+                </div>
+                <Button size="sm" variant="link" className="h-auto p-0 text-red-600 text-xs">
+                  Respond to Help Request →
+                </Button>
               </div>
+
+              {/* Medical Supplies */}
+              <div className="p-3 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-lg">
+                <div className="flex justify-between items-start mb-2">
+                  <Badge className="text-xs bg-red-600">NEED</Badge>
+                  <span className="text-[10px] text-muted-foreground">12m ago</span>
+                </div>
+                <p className="text-sm font-medium mb-1">Medical supplies needed</p>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
+                  <MapPin className="w-3 h-3" />
+                  <span>Unit 4, Cuttack</span>
+                </div>
+                <Button size="sm" variant="link" className="h-auto p-0 text-red-600 text-xs">
+                  Respond to Help Request →
+                </Button>
+              </div>
+
+              {/* Shelter Offered */}
               <div className="p-3 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/20 rounded-lg">
-                <div className="flex justify-between items-start mb-1">
-                  <span className="text-xs font-bold text-green-600">OFFER</span>
+                <div className="flex justify-between items-start mb-2">
+                  <Badge className="text-xs bg-green-600">OFFER</Badge>
                   <span className="text-[10px] text-muted-foreground">20m ago</span>
                 </div>
-                <p className="text-sm font-medium">Shelter available for 2 families</p>
-                <Button size="sm" variant="link" className="h-auto p-0 text-green-600">Contact</Button>
+                <p className="text-sm font-medium mb-1">Shelter available for 2 families</p>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
+                  <MapPin className="w-3 h-3" />
+                  <span>Khandagiri</span>
+                </div>
+                <Button size="sm" variant="link" className="h-auto p-0 text-green-600 text-xs">
+                  Contact Helper →
+                </Button>
               </div>
+
+              {/* Food Distribution */}
+              <div className="p-3 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/20 rounded-lg">
+                <div className="flex justify-between items-start mb-2">
+                  <Badge className="text-xs bg-green-600">OFFER</Badge>
+                  <span className="text-[10px] text-muted-foreground">35m ago</span>
+                </div>
+                <p className="text-sm font-medium mb-1">Free food distribution at community center</p>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
+                  <MapPin className="w-3 h-3" />
+                  <span>Bhubaneswar</span>
+                </div>
+                <Button size="sm" variant="link" className="h-auto p-0 text-green-600 text-xs">
+                  Get Details →
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Community Guidelines */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Community Guidelines</CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-muted-foreground space-y-2">
+              <p>• Be respectful and helpful</p>
+              <p>• Verify information before posting</p>
+              <p>• Use appropriate post types</p>
+              <p>• Add location for local help</p>
+              <p>• Report false information</p>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {/* Create Post Modal */}
+      <CreatePostModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onPostCreated={handlePostCreated}
+      />
     </div>
   );
 };
