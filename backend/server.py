@@ -44,6 +44,7 @@ logging.info("PostgreSQL database configured via SQLAlchemy")
 
 # Configure OpenAI (ChatGPT) - Primary AI backend
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+logging.info(f"OpenAI API Key loaded: {'FOUND' if OPENAI_API_KEY else 'NOT FOUND'}")
 if OPENAI_API_KEY:
     openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
     logging.info("Successfully initialized OpenAI (ChatGPT) API")
@@ -3276,9 +3277,6 @@ Response:"""
 @api_router.post("/ai/damage-assessment")
 async def assess_damage(image: UploadFile = File(...)):
     """Analyze disaster damage from uploaded images using OpenAI Vision API"""
-    if not openai_client:
-        raise HTTPException(status_code=503, detail="OpenAI Vision API is not available")
-    
     try:
         # Validate file type
         if not image.content_type or not image.content_type.startswith('image/'):
@@ -3294,12 +3292,17 @@ async def assess_damage(image: UploadFile = File(...)):
         # Create OpenAI Vision API request
         logging.info(f"Analyzing damage image: {image.filename}")
         
-        response = await openai_client.chat.completions.create(
-            model="gpt-4o",  # Use gpt-4o for vision
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are an expert disaster damage assessment AI. Analyze images of disaster damage (buildings, infrastructure, flooding, fire, etc.) and provide:
+        ai_response = None
+        
+        # Try OpenAI Vision API
+        if openai_client:
+            try:
+                response = await openai_client.chat.completions.create(
+                    model="gpt-4o",  # Use gpt-4o for vision
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": """You are an expert disaster damage assessment AI. Analyze images of disaster damage (buildings, infrastructure, flooding, fire, etc.) and provide:
 1. Severity level: minor, moderate, severe, or critical
 2. Damage type: flooding, structural, fire, wind, earthquake, etc.
 3. Detailed description of observed damage
@@ -3315,29 +3318,52 @@ Return your analysis as JSON with this structure:
   "confidence": 0.0-1.0,
   "recommendations": ["action 1", "action 2", ...]
 }"""
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Please analyze this disaster damage image and provide a comprehensive assessment."
                         },
                         {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_base64}"
-                            }
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "Please analyze this disaster damage image and provide a comprehensive assessment."
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{image_base64}"
+                                    }
+                                }
+                            ]
                         }
-                    ]
-                }
-            ],
-            max_tokens=1000
-        )
+                    ],
+                    max_tokens=1000
+                )
+                ai_response = response.choices[0].message.content
+            except Exception as openai_error:
+                logging.error(f"OpenAI Vision API error: {str(openai_error)}")
+                ai_response = None
+        
+        # If OpenAI failed or not available, return a basic analysis
+        if not ai_response:
+            logging.info("OpenAI Vision unavailable, returning basic analysis")
+            return {
+                "severity": "moderate",
+                "damage_type": "general",
+                "description": "Image analysis service temporarily unavailable. Please ensure the image shows clear disaster damage and try again later. Manual assessment recommended.",
+                "estimated_cost": "N/A - Manual assessment required",
+                "confidence": 0.5,
+                "recommendations": [
+                    "Document damage with multiple photos",
+                    "Contact local disaster management authorities",
+                    "Ensure area is safe before entry",
+                    "Keep receipts for repairs"
+                ],
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "filename": image.filename,
+                "note": "AI analysis unavailable - manual assessment recommended"
+            }
         
         # Parse AI response
-        ai_response = response.choices[0].message.content
-        
+
         # Try to extract JSON from response
         import re
         json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
@@ -3376,9 +3402,7 @@ async def get_disaster_predictions(
     longitude: Optional[float] = Query(None, description="Location longitude")
 ):
     """Generate AI-powered disaster predictions based on weather patterns and historical data"""
-    if not openai_client:
-        raise HTTPException(status_code=503, detail="OpenAI API is not available")
-    
+    logging.info("Processing disaster prediction request...")
     try:
         # Load current data
         weather = load_json_file('weather_data.json') or {}
@@ -3441,26 +3465,52 @@ Only include disasters with probability > 20%. Focus on actionable predictions."
 
         logging.info("Generating disaster predictions with AI...")
         
-        response = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are an expert meteorologist and disaster prediction AI. Provide accurate, data-driven predictions in JSON format."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,  # Lower temperature for more consistent predictions
-            max_tokens=2000
-        )
+        response_text = None
         
-        # Parse AI response
-        ai_response = response.choices[0].message.content
+        # Try OpenAI first
+        if openai_client:
+            try:
+                response = await openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are an expert meteorologist and disaster prediction AI. Provide accurate, data-driven predictions in JSON format."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3,  # Lower temperature for more consistent predictions
+                    max_tokens=2000
+                )
+                response_text = response.choices[0].message.content
+            except Exception as openai_error:
+                logging.error(f"OpenAI error in predictions: {str(openai_error)}")
+                response_text = None
+        
+        # Fallback to Gemini if OpenAI fails
+        if not response_text and gemini_model:
+            try:
+                logging.info("Using Gemini as fallback for predictions...")
+                response = gemini_model.generate_content(prompt)
+                response_text = response.text if hasattr(response, 'text') else str(response)
+            except Exception as gemini_error:
+                logging.error(f"Gemini error in predictions: {str(gemini_error)}")
+                response_text = None
+        
+        # Parse AI response if we got one
+        ai_response = response_text
         
         # Extract JSON
         import re
-        json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
-        if json_match:
-            result = json.loads(json_match.group())
+        if ai_response:
+            json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+            else:
+                result = None
         else:
-            # Fallback predictions
+            result = None
+        
+        # Fallback predictions if AI failed
+        if not result:
+            logging.info("Using fallback predictions - AI services unavailable")
             result = {
                 "predictions": [
                     {
@@ -3510,11 +3560,33 @@ Only include disasters with probability > 20%. Focus on actionable predictions."
                     ]
                 }
             ],
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "location": {"latitude": latitude, "longitude": longitude}
         }
     except Exception as e:
         logging.error(f"Disaster prediction error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error generating predictions: {str(e)}")
+        # Return fallback predictions instead of raising error
+        return {
+            "predictions": [
+                {
+                    "disaster_type": "general",
+                    "probability": 30,
+                    "timeframe": "Next 7 days",
+                    "analysis": "AI prediction service temporarily unavailable. Monitor local weather forecasts and official alerts for the latest information.",
+                    "confidence": 0.5,
+                    "factors": ["Service unavailable"],
+                    "recommendations": [
+                        "Check official weather forecasts regularly",
+                        "Keep emergency supplies ready",
+                        "Follow local disaster management updates",
+                        "Stay alert for official warnings"
+                    ]
+                }
+            ],
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "location": {"latitude": latitude, "longitude": longitude},
+            "note": "AI service temporarily unavailable"
+        }
 
 @api_router.get("/ai-assistant/recommendations")
 async def get_ai_recommendations():
@@ -3775,19 +3847,31 @@ async def simple_chat(request: SimpleChatRequest, db: AsyncSessionLocal = Depend
 • Active Alerts: {disaster_context.get('alert_count', 0)}"""
         
         # System message for OpenAI
-        system_message = f"""You are Suraksha AI, a friendly disaster management and safety expert in India.
+        system_message = f"""You are Suraksha AI, an intelligent and friendly AI assistant.
 
+You can help with:
+- Disaster management and safety (primary focus)
+- General knowledge and questions
+- Coding and technical help
+- Education and learning
+- Daily life advice
+- Calculations and problem-solving
+- ANYTHING the user asks
+
+Current Disaster Context (reference if relevant):
 {context_info}
 
 IMPORTANT:
-- Answer naturally and conversationally (like ChatGPT)
+- Answer ANY question naturally and conversationally (like ChatGPT)
+- You are NOT limited to disaster topics - help with ANYTHING
 - Keep responses concise (2-3 short paragraphs max)
-- Use bullet points (-) for lists
-- Use **bold** for critical warnings
-- If emergency: Give immediate safety steps first
+- Use bullet points (-) for lists  
+- Use **bold** for emphasis
 - Support multilingual queries (Hindi, Tamil, Telugu, Bengali, Marathi, English)
-- Be warm, helpful, and empathetic
-- If greeting: Respond warmly and offer help"""
+- Be warm, helpful, knowledgeable, and empathetic
+- For greetings: Respond warmly and ask how you can help
+- For coding questions: Provide clear explanations and code examples
+- For general knowledge: Give accurate, helpful information"""
 
         response_text = None
         

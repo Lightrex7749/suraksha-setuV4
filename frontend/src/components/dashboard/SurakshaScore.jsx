@@ -123,8 +123,8 @@ const SurakshaScore = ({ score: initialScore = 85 }) => {
           </button>
         </div>
 
-        <div className="h-48 relative">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-48 relative" style={{ minHeight: '192px' }}>
+          <ResponsiveContainer width="100%" height={192}>
             <PieChart>
               <Pie
                 data={data}
