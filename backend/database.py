@@ -14,22 +14,49 @@ load_dotenv()
 # Get database URL from environment
 DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
 
-# Convert postgresql:// to postgresql+asyncpg:// for async support
-if DATABASE_URL and DATABASE_URL.startswith('postgresql://'):
-    DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://', 1)
-
-# Create async engine with SSL support for Render
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,  # Set to True for SQL query logging
-    pool_pre_ping=True,  # Verify connections before using
-    pool_size=10,
-    max_overflow=20,
-    connect_args={
-        "ssl": "require",  # Render PostgreSQL requires SSL
-        "server_settings": {"application_name": "suraksha_setu_backend"}
-    }
-)
+# Auto-detect database type and configure appropriately
+if DATABASE_URL:
+    if DATABASE_URL.startswith('sqlite'):
+        # SQLite for local development
+        print("🔧 Using SQLite for local development")
+        engine = create_async_engine(
+            DATABASE_URL,
+            echo=False,
+            connect_args={"check_same_thread": False}
+        )
+    elif DATABASE_URL.startswith('postgresql://'):
+        # PostgreSQL for production (Render)
+        print("🔧 Using PostgreSQL for production")
+        DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://', 1)
+        engine = create_async_engine(
+            DATABASE_URL,
+            echo=False,
+            pool_pre_ping=True,
+            pool_size=10,
+            max_overflow=20,
+            connect_args={
+                "ssl": "require",  # Render PostgreSQL requires SSL
+                "server_settings": {"application_name": "suraksha_setu_backend"}
+            }
+        )
+    elif DATABASE_URL.startswith('postgresql+asyncpg://'):
+        # Already converted PostgreSQL URL
+        print("🔧 Using PostgreSQL for production")
+        engine = create_async_engine(
+            DATABASE_URL,
+            echo=False,
+            pool_pre_ping=True,
+            pool_size=10,
+            max_overflow=20,
+            connect_args={
+                "ssl": "require",
+                "server_settings": {"application_name": "suraksha_setu_backend"}
+            }
+        )
+    else:
+        raise ValueError(f"Unsupported database URL format: {DATABASE_URL[:20]}...")
+else:
+    raise ValueError("DATABASE_URL not set in environment variables")
 
 # Create async session factory
 AsyncSessionLocal = async_sessionmaker(
