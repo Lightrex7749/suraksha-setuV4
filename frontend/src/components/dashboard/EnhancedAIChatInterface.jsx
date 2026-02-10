@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   MessageCircle, Send, Mic, MicOff, Loader2, Sparkles, 
-  Bot, User, Volume2, VolumeX, Zap, Brain, TrendingUp
+  Bot, User, Volume2, VolumeX, Zap, Brain, TrendingUp, X, Minimize2, Maximize2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,7 +19,7 @@ const EnhancedAIChatInterface = () => {
     {
       id: 1,
       type: 'bot',
-      text: '👋 **Namaste!** I\'m Suraksha AI, your intelligent disaster safety assistant.\n\nI can help you with:\n• **Real-time weather** and **air quality** updates\n• **Emergency preparedness** tips\n• **Live disaster alerts** in your area\n• **Safety guidance** for earthquakes, floods & cyclones\n\nHow can I assist you today?',
+      text: '👋 **Namaste!** I\'m Suraksha AI, your intelligent disaster safety assistant powered by ChatGPT.\n\n🔹 **Real-time weather** & **air quality** updates\n🔹 **Emergency preparedness** & safety tips\n🔹 **Live disaster alerts** in your area\n🔹 **Safety guidance** for natural disasters\n\nHow can I help you stay safe today?',
       timestamp: new Date(),
     },
   ]);
@@ -27,6 +27,7 @@ const EnhancedAIChatInterface = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState(null);
   const [audioChunks, setAudioChunks] = useState([]);
   const scrollAreaRef = useRef(null);
@@ -231,10 +232,11 @@ const EnhancedAIChatInterface = () => {
   };
 
   const quickPrompts = [
-    { icon: '🌧️', text: 'Weather forecast for today', color: 'bg-blue-50 hover:bg-blue-100 dark:bg-blue-950' },
-    { icon: '💨', text: 'Current air quality status', color: 'bg-green-50 hover:bg-green-100 dark:bg-green-950' },
-    { icon: '🌊', text: 'What to do during floods?', color: 'bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950' },
-    { icon: '🏠', text: 'Emergency kit checklist', color: 'bg-orange-50 hover:bg-orange-100 dark:bg-orange-950' },
+    { icon: '�️', text: 'Today\'s weather', color: 'from-blue-500 to-cyan-500', shortText: 'Weather' },
+    { icon: '💨', text: 'Air quality now', color: 'from-green-500 to-emerald-500', shortText: 'AQI' },
+    { icon: '🌊', text: 'Flood safety tips', color: 'from-cyan-500 to-blue-600', shortText: 'Flood' },
+    { icon: '⚡', text: 'Emergency kit list', color: 'from-orange-500 to-red-500', shortText: 'Kit' },
+    { icon: '🏠', text: 'Earthquake safety', color: 'from-purple-500 to-pink-500', shortText: 'Earthquake' },
   ];
 
   const renderMessage = (message) => {
@@ -249,7 +251,7 @@ const EnhancedAIChatInterface = () => {
           const parts = line.split(/(\*\*.*?\*\*)/g);
           const formatted = parts.map((part, j) => {
             if (part.startsWith('**') && part.endsWith('**')) {
-              return <strong key={j} className="font-bold text-primary">{part.slice(2, -2)}</strong>;
+              return <strong key={j} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>;
             }
             return part;
           });
@@ -265,43 +267,44 @@ const EnhancedAIChatInterface = () => {
 
     return (
       <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className={`flex gap-3 ${isBot ? 'flex-row' : 'flex-row-reverse'}`}
+        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        className={`flex gap-2 ${isBot ? 'flex-row' : 'flex-row-reverse'} group`}
       >
-        <Avatar className={`h-9 w-9 ${isBot ? 'bg-gradient-to-br from-blue-500 to-purple-500' : 'bg-primary'}`}>
-          <AvatarFallback className="text-white">
-            {isBot ? <Bot className="h-5 w-5" /> : <User className="h-5 w-5" />}
+        <Avatar className={`h-8 w-8 shrink-0 ${isBot ? 'bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 ring-2 ring-purple-100 dark:ring-purple-900' : 'bg-gradient-to-br from-indigo-500 to-purple-600 ring-2 ring-indigo-100 dark:ring-indigo-900'}`}>
+          <AvatarFallback className="text-white bg-transparent">
+            {isBot ? <Bot className="h-4 w-4" /> : <User className="h-4 w-4" />}
           </AvatarFallback>
         </Avatar>
-        <div className={`flex-1 max-w-[80%] ${isBot ? '' : 'flex flex-col items-end'}`}>
+        <div className={`flex-1 max-w-[85%] md:max-w-[75%] ${isBot ? '' : 'flex flex-col items-end'}`}>
           <div
-            className={`rounded-2xl px-4 py-3 ${
+            className={`rounded-2xl px-4 py-2.5 shadow-sm ${
               isBot
-                ? 'bg-muted text-foreground'
-                : 'bg-primary text-primary-foreground'
+                ? 'bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 text-foreground border border-gray-200 dark:border-gray-700'
+                : 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-md'
             }`}
           >
-            <div className={`text-sm ${isBot ? 'space-y-1' : ''}`}>
-              {isBot ? formatText(message.text) : message.text}
+            <div className={`text-[13px] leading-relaxed ${isBot ? 'space-y-1' : ''}`}>
+              {isBot ? formatText(message.text) : <span className="font-medium">{message.text}</span>}
             </div>
           </div>
           {message.data && (
-            <div className="mt-2 flex gap-2 flex-wrap">
+            <div className="mt-1.5 flex gap-1.5 flex-wrap">
               {message.data.weather && (
-                <Badge variant="outline" className="text-xs gap-1">
+                <Badge variant="secondary" className="text-[10px] gap-1 h-5 px-2">
                   🌡️ {message.data.weather.temperature}°C
                 </Badge>
               )}
               {message.data.aqi && (
-                <Badge variant="outline" className="text-xs gap-1">
+                <Badge variant="secondary" className="text-[10px] gap-1 h-5 px-2">
                   💨 AQI: {message.data.aqi.aqi}
                 </Badge>
               )}
             </div>
           )}
-          <p className={`text-[10px] text-muted-foreground mt-1 ${isBot ? '' : 'text-right'}`}>
+          <p className={`text-[9px] text-muted-foreground mt-1 ${isBot ? '' : 'text-right'} opacity-0 group-hover:opacity-100 transition-opacity`}>
             {message.timestamp.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
           </p>
         </div>
@@ -310,80 +313,106 @@ const EnhancedAIChatInterface = () => {
   };
 
   return (
-    <Card className="w-full h-[600px] flex flex-col shadow-lg border-2">
-      {/* Header */}
-      <CardHeader className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 text-white pb-4">
-        <div className="flex items-center justify-between">
+    <Card className={`w-full ${isExpanded ? 'h-[700px]' : 'h-[550px]'} flex flex-col shadow-xl border-2 border-gray-200 dark:border-gray-800 overflow-hidden transition-all duration-300 backdrop-blur-sm bg-white/50 dark:bg-gray-900/50`}>
+      {/* Redesigned Header with Gradient */}
+      <CardHeader className="relative bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white pb-3 pt-3 px-4 shrink-0">
+        {/* Animated Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.1),transparent_50%)]"></div>
+        </div>
+        
+        <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-3">
+            {/* Animated AI Avatar */}
             <div className="relative">
-              <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur flex items-center justify-center">
-                <Sparkles className="h-6 w-6 animate-pulse" />
+              <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center ring-2 ring-white/30 shadow-lg">
+                <Sparkles className="h-5 w-5 text-white animate-pulse" />
               </div>
-              <span className="absolute bottom-0 right-0 h-3 w-3 bg-green-400 rounded-full border-2 border-white"></span>
+              <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 bg-green-400 rounded-full border-2 border-white shadow-md"></span>
             </div>
             <div>
-              <CardTitle className="text-xl font-bold">Suraksha AI</CardTitle>
-              <p className="text-sm text-white/90">Powered by ChatGPT & Whisper</p>
+              <CardTitle className="text-lg font-bold tracking-tight flex items-center gap-2">
+                Suraksha AI
+                <Badge className="bg-white/20 text-white border-white/30 text-[10px] px-1.5 py-0 h-4 backdrop-blur-sm">
+                  <Zap className="w-2.5 h-2.5 mr-0.5" />
+                  GPT-4
+                </Badge>
+              </CardTitle>
+              <p className="text-[11px] text-white/80 font-medium">Your Intelligent Safety Assistant</p>
             </div>
           </div>
-          <div className="flex gap-2">
-            {isSpeaking ? (
+          <div className="flex gap-1">
+            {isSpeaking && (
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={stopSpeaking}
-                className="h-9 w-9 text-white hover:bg-white/20"
+                className="h-8 w-8 text-white hover:bg-white/20 rounded-lg"
               >
-                <VolumeX className="h-5 w-5" />
+                <VolumeX className="h-4 w-4" />
               </Button>
-            ) : (
-              <Badge variant="secondary" className="gap-1 bg-white/10 text-white border-white/20">
-                <Brain className="w-3 h-3" />
-                AI
-              </Badge>
             )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="h-8 w-8 text-white hover:bg-white/20 rounded-lg"
+            >
+              {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
           </div>
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1 flex flex-col p-4 space-y-4">
-        {/* Quick Prompts */}
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {quickPrompts.map((prompt, i) => (
-            <motion.button
-              key={i}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: i * 0.1 }}
-              onClick={() => setInputValue(prompt.text)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap transition-all border ${prompt.color}`}
-            >
-              <span>{prompt.icon}</span>
-              <span>{prompt.text}</span>
-            </motion.button>
-          ))}
+      <CardContent className="flex-1 flex flex-col p-0 space-y-0 overflow-hidden">
+        {/* Quick Action Chips */}
+        <div className="px-4 pt-3 pb-2 border-b border-gray-200 dark:border-gray-800 bg-gradient-to-b from-gray-50/50 to-transparent dark:from-gray-900/30 shrink-0">
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            <AnimatePresence>
+              {quickPrompts.map((prompt, i) => (
+                <motion.button
+                  key={i}
+                  initial={{ opacity: 0, scale: 0.8, y: -10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  whileHover={{ scale: 1.05, y: -2 }}
+                  whileTap={{ scale: 0.95 }}
+                  transition={{ delay: i * 0.05, type: "spring", stiffness: 300 }}
+                  onClick={() => setInputValue(prompt.text)}
+                  className={`group relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-all bg-gradient-to-r ${prompt.color} text-white shadow-sm hover:shadow-md`}
+                >
+                  <span className="text-sm drop-shadow-sm">{prompt.icon}</span>
+                  <span className="hidden md:inline">{prompt.shortText}</span>
+                </motion.button>
+              ))}
+            </AnimatePresence>
+          </div>
         </div>
 
-        {/* Messages */}
-        <ScrollArea ref={scrollAreaRef} className="flex-1">
-          <div className="space-y-4 pr-4">
-            {messages.map((message) => renderMessage(message))}
+        {/* Messages Area with Better Styling */}
+        <ScrollArea ref={scrollAreaRef} className="flex-1 px-4 bg-gradient-to-b from-transparent via-gray-50/30 to-gray-100/30 dark:via-gray-900/20 dark:to-gray-800/20">
+          <div className="space-y-3 py-4">
+            <AnimatePresence>
+              {messages.map((message) => (
+                <div key={message.id}>{renderMessage(message)}</div>
+              ))}
+            </AnimatePresence>
             {isLoading && (
               <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex gap-3"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="flex gap-2"
               >
-                <Avatar className="h-9 w-9 bg-gradient-to-br from-blue-500 to-purple-500">
-                  <AvatarFallback className="text-white">
-                    <Bot className="h-5 w-5" />
+                <Avatar className="h-8 w-8 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 ring-2 ring-purple-100 dark:ring-purple-900">
+                  <AvatarFallback className="text-white bg-transparent">
+                    <Bot className="h-4 w-4" />
                   </AvatarFallback>
                 </Avatar>
-                <div className="bg-muted rounded-2xl px-4 py-3">
+                <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 rounded-2xl px-4 py-3 border border-gray-200 dark:border-gray-700 shadow-sm">
                   <div className="flex gap-1">
                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                     <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <div className="w-2 h-2 bg-pink-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
                 </div>
               </motion.div>
@@ -391,45 +420,66 @@ const EnhancedAIChatInterface = () => {
           </div>
         </ScrollArea>
 
-        {/* Input */}
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Ask about weather, alerts, safety tips..."
-              disabled={isLoading || isRecording}
-              className="w-full px-4 py-3 pr-12 rounded-full border-2 border-gray-200 dark:border-gray-700 focus:border-primary focus:outline-none transition-all disabled:opacity-50"
-            />
-            {isRecording && (
-              <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-              </div>
-            )}
+        {/* Redesigned Input Area */}
+        <div className="p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 shrink-0">
+          <div className="flex gap-2 items-end">
+            <div className="relative flex-1">
+              <textarea
+                ref={inputRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Ask me anything about disasters, weather, or safety..."
+                disabled={isLoading || isRecording}
+                rows={1}
+                className="w-full px-4 py-3 pr-3 rounded-2xl border-2 border-gray-200 dark:border-gray-700 focus:border-purple-400 dark:focus:border-purple-600 focus:ring-2 focus:ring-purple-100 dark:focus:ring-purple-900/30 focus:outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed resize-none bg-gray-50 dark:bg-gray-800 text-sm"
+                style={{ maxHeight: '120px', minHeight: '48px' }}
+              />
+              {isRecording && (
+                <motion.div 
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="absolute right-3 top-3"
+                >
+                  <div className="flex items-center gap-2 bg-red-500 text-white px-2 py-1 rounded-full text-[10px] font-semibold">
+                    <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                    Recording
+                  </div>
+                </motion.div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={isRecording ? stopRecording : startRecording}
+                disabled={isLoading}
+                size="icon"
+                className={`h-12 w-12 rounded-xl shadow-md transition-all ${
+                  isRecording 
+                    ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
+                    : 'bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
+                }`}
+              >
+                {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+              </Button>
+              <Button
+                onClick={handleSendMessage}
+                disabled={!inputValue.trim() || isLoading || isRecording}
+                size="icon"
+                className="h-12 w-12 rounded-xl shadow-md bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Send className="h-5 w-5" />
+                )}
+              </Button>
+            </div>
           </div>
-          <Button
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={isLoading}
-            size="icon"
-            className={`h-12 w-12 rounded-full ${isRecording ? 'bg-red-500 hover:bg-red-600' : ''}`}
-          >
-            {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-          </Button>
-          <Button
-            onClick={handleSendMessage}
-            disabled={!inputValue.trim() || isLoading || isRecording}
-            size="icon"
-            className="h-12 w-12 rounded-full"
-          >
-            {isLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <Send className="h-5 w-5" />
-            )}
-          </Button>
+          
+          {/* Helper Text */}
+          <p className="text-[10px] text-muted-foreground mt-2 text-center">
+            Powered by ChatGPT & Whisper • Press Enter to send
+          </p>
         </div>
       </CardContent>
     </Card>

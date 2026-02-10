@@ -134,28 +134,20 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto p-4">
-      {/* Enhanced AI Chat Interface - Voice-Enabled with Premium UX */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <EnhancedAIChatInterface />
-      </motion.div>
-
+      {/* Header Section with Better Gradient */}
       <motion.div 
-        className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-gray-800 dark:to-gray-900 p-6 rounded-xl border-2 shadow-lg"
+        className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-6 rounded-2xl border-2 border-indigo-100 dark:border-gray-800 shadow-lg backdrop-blur-sm"
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1 }}
       >
-        <div className="space-y-1">
-          <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+        <div className="space-y-2">
+          <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
             Command Center
           </h1>
-          <p className="text-muted-foreground flex items-center gap-2">
+          <p className="text-muted-foreground flex items-center gap-2 text-sm">
             <TrendingUp className="w-4 h-4" />
-            Real-time disaster management & safety overview
+            Live disaster management & safety monitoring dashboard
           </p>
         </div>
         <div className="flex gap-2">
@@ -164,32 +156,45 @@ const Dashboard = () => {
             size="sm" 
             onClick={handleRefresh}
             disabled={isRefreshing}
-            className="hover:scale-105 transition-transform shadow-md"
+            className="hover:scale-105 transition-transform shadow-sm border-2"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button variant="outline" size="sm" className="hover:scale-105 transition-transform shadow-md">
+          <Button variant="outline" size="sm" className="hover:scale-105 transition-transform shadow-sm border-2">
             <Share2 className="w-4 h-4 mr-2" />
-            Share Report
+            Share
           </Button>
-          <Button size="sm" className="hover:scale-105 transition-transform shadow-md bg-gradient-to-r from-blue-600 to-purple-600">
+          <Button size="sm" className="hover:scale-105 transition-transform shadow-md bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-700 hover:via-purple-700 hover:to-pink-700">
             <Download className="w-4 h-4 mr-2" />
-            Export Data
+            Export
           </Button>
         </div>
       </motion.div>
 
+      {/* Enhanced AI Chat Interface - Full Width with Modern Design */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+      >
+        <EnhancedAIChatInterface />
+      </motion.div>
+
       {/* Top Row: Score, Weather, Alerts with Stagger Animation */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {[SurakshaScore, WeatherSummary, ActiveAlerts].map((Component, index) => (
+        {[
+          { Component: SurakshaScore, props: { score }, delay: 0.3 },
+          { Component: WeatherSummary, props: {}, delay: 0.35 },
+          { Component: ActiveAlerts, props: {}, delay: 0.4 }
+        ].map(({ Component, props, delay }, index) => (
           <motion.div
             key={index}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4, delay: 0.2 + index * 0.1 }}
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.4, delay }}
           >
-            {index === 0 ? <Component score={score} /> : <Component />}
+            <Component {...props} />
           </motion.div>
         ))}
       </div>
@@ -198,7 +203,7 @@ const Dashboard = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.5 }}
+        transition={{ duration: 0.5, delay: 0.45 }}
       >
         <ImpactStats />
       </motion.div>
@@ -209,7 +214,7 @@ const Dashboard = () => {
           className="lg:col-span-2 space-y-6"
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.5, delay: 0.6 }}
+          transition={{ duration: 0.5, delay: 0.5 }}
         >
            <DisasterTimeline />
            <LiveAQIChart />
@@ -218,7 +223,7 @@ const Dashboard = () => {
           className="space-y-6"
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.5, delay: 0.7 }}
+          transition={{ duration: 0.5, delay: 0.55 }}
         >
           {/* Location Selector */}
           <LocationSelector />
@@ -227,32 +232,34 @@ const Dashboard = () => {
           <NotificationSettings />
           
           {/* AI Recommendations with Enhanced UI */}
-          <div className="bg-gradient-to-br from-purple-50 to-blue-50 dark:from-gray-800 dark:to-gray-900 border-2 border-purple-200 dark:border-purple-800 rounded-xl p-6 shadow-lg">
+          <div className="bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 border-2 border-purple-200 dark:border-purple-900/30 rounded-2xl p-6 shadow-lg backdrop-blur-sm">
             <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-              <div className="w-1 h-6 bg-gradient-to-b from-purple-600 to-blue-600 rounded"></div>
-              AI Recommendations
+              <div className="w-1 h-6 bg-gradient-to-b from-purple-600 via-pink-600 to-blue-600 rounded-full"></div>
+              <span className="bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">AI Recommendations</span>
             </h3>
             {recommendations.length > 0 ? (
-              <ul className="space-y-3">
+              <ul className="space-y-2.5">
                 {recommendations.map((rec, idx) => (
                   <motion.li 
                     key={idx}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.8 + idx * 0.1 }}
-                    className="flex gap-3 items-start p-3 rounded-lg bg-white/50 dark:bg-gray-800/50 hover:bg-white dark:hover:bg-gray-700 transition-all cursor-pointer group"
+                    transition={{ delay: 0.6 + idx * 0.05, type: "spring", stiffness: 200 }}
+                    className="flex gap-3 items-start p-3 rounded-xl bg-white/70 dark:bg-gray-800/70 hover:bg-white dark:hover:bg-gray-700 transition-all cursor-pointer group shadow-sm hover:shadow-md border border-gray-100 dark:border-gray-700"
                   >
-                    <span className={`${rec.color} rounded-full p-2 text-lg group-hover:scale-110 transition-transform shadow-md`}>
+                    <span className={`${rec.color} rounded-xl p-2.5 text-base group-hover:scale-110 transition-transform shadow-sm min-w-[40px] flex items-center justify-center`}>
                       {rec.icon}
                     </span>
-                    <span className="text-sm flex-1 pt-1.5">{rec.text}</span>
+                    <span className="text-[13px] flex-1 pt-1.5 leading-relaxed">{rec.text}</span>
                   </motion.li>
                 ))}
               </ul>
             ) : (
-              <div className="text-sm text-muted-foreground animate-pulse flex items-center gap-2">
-                <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce"></div>
-                Loading recommendations...
+              <div className="text-sm text-muted-foreground animate-pulse flex items-center gap-2 p-4">
+                <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-pink-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                <span className="ml-2">Loading recommendations...</span>
               </div>
             )}
           </div>
