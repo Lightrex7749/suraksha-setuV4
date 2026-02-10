@@ -3,14 +3,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ShieldAlert, Loader2, Mail } from 'lucide-react';
+import { ShieldAlert, Loader2, Mail, Zap, GraduationCap, Microscope, Users, UserCog } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login, signInWithGoogle } = useAuth();
+  const { login, signInWithGoogle, quickJoin, devMode } = useAuth();
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
@@ -85,6 +86,19 @@ const Login = () => {
       setError(errorMessage);
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  // 🔧 DEVELOPMENT: Quick join handler
+  const handleQuickJoin = (role) => {
+    if (!devMode) return;
+    
+    try {
+      quickJoin(role);
+      navigate('/app/dashboard');
+    } catch (err) {
+      console.error('Quick join error:', err);
+      setError('Quick join failed');
     }
   };
 
@@ -209,6 +223,85 @@ const Login = () => {
               </Link>
             </div>
           </form>
+
+          {/* 🔧 DEVELOPMENT MODE: Quick Join Section */}
+          {devMode && (
+            <div className="mt-6 pt-6 border-t border-border">
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/20">
+                  <Zap className="w-3 h-3 mr-1" />
+                  DEV MODE
+                </Badge>
+              </div>
+              <h3 className="text-sm font-semibold text-center mb-3 text-muted-foreground">
+                Quick Join (Testing)
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickJoin('developer')}
+                  className="h-auto py-3 flex flex-col items-center gap-1 hover:bg-purple-500/10 hover:border-purple-500/50"
+                >
+                  <UserCog className="w-5 h-5 text-purple-600" />
+                  <span className="text-xs font-medium">Developer</span>
+                  <span className="text-[10px] text-muted-foreground">All Access</span>
+                </Button>
+                
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickJoin('admin')}
+                  className="h-auto py-3 flex flex-col items-center gap-1 hover:bg-red-500/10 hover:border-red-500/50"
+                >
+                  <ShieldAlert className="w-5 h-5 text-red-600" />
+                  <span className="text-xs font-medium">Admin</span>
+                  <span className="text-[10px] text-muted-foreground">Full Control</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickJoin('scientist')}
+                  className="h-auto py-3 flex flex-col items-center gap-1 hover:bg-blue-500/10 hover:border-blue-500/50"
+                >
+                  <Microscope className="w-5 h-5 text-blue-600" />
+                  <span className="text-xs font-medium">Scientist</span>
+                  <span className="text-[10px] text-muted-foreground">Data & Analysis</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickJoin('student')}
+                  className="h-auto py-3 flex flex-col items-center gap-1 hover:bg-green-500/10 hover:border-green-500/50"
+                >
+                  <GraduationCap className="w-5 h-5 text-green-600" />
+                  <span className="text-xs font-medium">Student</span>
+                  <span className="text-[10px] text-muted-foreground">Learning Portal</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickJoin('citizen')}
+                  className="h-auto py-3 flex flex-col items-center gap-1 hover:bg-gray-500/10 hover:border-gray-500/50 col-span-2"
+                >
+                  <Users className="w-5 h-5 text-gray-600" />
+                  <span className="text-xs font-medium">Citizen</span>
+                  <span className="text-[10px] text-muted-foreground">Basic Access</span>
+                </Button>
+              </div>
+              <p className="text-[10px] text-center text-muted-foreground mt-3">
+                Click any role to instantly access the app
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -15,12 +15,22 @@ import {
   X,
   Search,
   UserCircle,
-  Phone
+  Phone,
+  UserCog,
+  ChevronDown
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from '@/contexts/AuthContext';
 import ChatBot from '@/components/chatbot/ChatBot';
 
@@ -41,7 +51,7 @@ const SidebarItem = ({ icon: Icon, label, path, active, collapsed }) => (
 
 const MainLayout = () => {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, logout, devMode, switchRole } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -84,7 +94,12 @@ const MainLayout = () => {
     const items = [...baseNavItems];
     const userRole = user?.role || 'citizen';
 
-    if (userRole === 'admin') {
+    if (userRole === 'developer') {
+      // Developer sees ALL tabs for testing
+      items.push(roleNavItems.student);
+      items.push(roleNavItems.scientist);
+      items.push(roleNavItems.admin);
+    } else if (userRole === 'admin') {
       // Admin sees all tabs
       items.push(roleNavItems.student);
       items.push(roleNavItems.scientist);
@@ -158,9 +173,57 @@ const MainLayout = () => {
                 </Avatar>
                 <div className="flex flex-col flex-1 min-w-0">
                   <span className="text-sm font-medium truncate">{user?.name || 'User'}</span>
-                  <span className="text-xs text-muted-foreground">{user ? getUserTypeLabel(user.user_type) : 'Citizen'}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground">{user ? getUserTypeLabel(user.user_type) : 'Citizen'}</span>
+                    {user?.role && (
+                      <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                        {user.role}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               </div>
+              
+              {/* 🔧 DEV MODE: Role Switcher */}
+              {devMode && user && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="w-full justify-between text-xs h-8">
+                      <div className="flex items-center gap-1">
+                        <UserCog className="w-3 h-3" />
+                        <span>Switch Role</span>
+                      </div>
+                      <ChevronDown className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuLabel className="text-xs">
+                      Dev Tools - Quick Switch
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => switchRole('developer')} className="text-xs">
+                      <UserCog className="w-3 h-3 mr-2 text-purple-600" />
+                      Developer (All Access)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => switchRole('admin')} className="text-xs">
+                      <ShieldAlert className="w-3 h-3 mr-2 text-red-600" />
+                      Admin
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => switchRole('scientist')} className="text-xs">
+                      <Microscope className="w-3 h-3 mr-2 text-blue-600" />
+                      Scientist
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => switchRole('student')} className="text-xs">
+                      <GraduationCap className="w-3 h-3 mr-2 text-green-600" />
+                      Student
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => switchRole('citizen')} className="text-xs">
+                      <Users className="w-3 h-3 mr-2 text-gray-600" />
+                      Citizen
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           ) : (
             <div className="text-center text-xs text-muted-foreground">
@@ -197,6 +260,12 @@ const MainLayout = () => {
           </div>
 
           <div className="flex items-center gap-4">
+            {devMode && (
+              <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/20 hidden md:flex">
+                <UserCog className="w-3 h-3 mr-1" />
+                DEV MODE
+              </Badge>
+            )}
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-destructive/10 text-destructive rounded-full text-sm font-medium animate-pulse">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"></span>

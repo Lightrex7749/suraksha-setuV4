@@ -25,20 +25,27 @@ export const AuthProvider = ({ children }) => {
     // 🔧 DEVELOPMENT MODE BYPASS
     if (DEV_MODE) {
       console.log('🔧 DEV MODE: Using mock authentication');
-      const mockUser = {
-        id: 'dev_user_' + Date.now(),
-        email: 'dev@suraksha.local',
-        name: 'Development User',
-        photoURL: null,
-        role: 'citizen',
-        emailVerified: true
-      };
-      const mockToken = 'dev_token_' + Date.now();
       
-      setUser(mockUser);
-      setToken(mockToken);
-      localStorage.setItem('auth_token', mockToken);
-      localStorage.setItem('auth_user', JSON.stringify(mockUser));
+      // Check if user already exists in localStorage
+      const storedUser = localStorage.getItem('auth_user');
+      const storedToken = localStorage.getItem('auth_token');
+      
+      if (storedUser && storedToken) {
+        try {
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+          setToken(storedToken);
+          console.log('🔧 DEV MODE: Restored user with role:', parsedUser.role);
+          setLoading(false);
+          return;
+        } catch (e) {
+          console.error('Failed to parse stored user', e);
+        }
+      }
+      
+      // No stored user, don't auto-login
+      setUser(null);
+      setToken(null);
       setLoading(false);
       return;
     }
@@ -281,6 +288,58 @@ export const AuthProvider = ({ children }) => {
     return null;
   };
 
+  // 🔧 QUICK JOIN FOR TESTING - Bypass authentication with role selection
+  const quickJoin = (role = 'developer') => {
+    if (!DEV_MODE) {
+      console.warn('Quick join only available in dev mode');
+      return;
+    }
+
+    console.log('🔧 DEV MODE: Quick join as', role);
+    const roleNames = {
+      'developer': 'Developer (Full Access)',
+      'admin': 'Admin User',
+      'scientist': 'Scientist User',
+      'student': 'Student User',
+      'citizen': 'Citizen User'
+    };
+
+    const mockUser = {
+      id: `dev_${role}_` + Date.now(),
+      email: `${role}@dev.local`,
+      name: roleNames[role] || role,
+      photoURL: null,
+      role: role,
+      emailVerified: true
+    };
+
+    const mockToken = 'dev_token_' + Date.now();
+    setUser(mockUser);
+    setToken(mockToken);
+    localStorage.setItem('auth_token', mockToken);
+    localStorage.setItem('auth_user', JSON.stringify(mockUser));
+    return mockUser;
+  };
+
+  // 🔧 SWITCH ROLE FOR TESTING - Change role without re-login
+  const switchRole = (newRole) => {
+    if (!DEV_MODE) {
+      console.warn('Role switching only available in dev mode');
+      return;
+    }
+
+    if (!user) {
+      console.warn('No user logged in');
+      return;
+    }
+
+    console.log('🔧 DEV MODE: Switching role from', user.role, 'to', newRole);
+    const updatedUser = { ...user, role: newRole };
+    setUser(updatedUser);
+    localStorage.setItem('auth_user', JSON.stringify(updatedUser));
+    return updatedUser;
+  };
+
   const value = {
     user,
     token,
@@ -289,6 +348,8 @@ export const AuthProvider = ({ children }) => {
     signInWithGoogle,
     logout,
     refreshToken,
+    quickJoin, // 🔧 Quick join for testing
+    switchRole, // 🔧 Switch role for testing
     loading,
     error,
     isAuthenticated: !!user,
