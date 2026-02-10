@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   X, MapPin, Tag, AlertCircle, HelpCircle, 
-  Megaphone, MessageSquare, Send
+  Megaphone, MessageSquare, Send, Camera, Trash2
 } from 'lucide-react';
 import {
   Dialog,
@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import MediaUploader from './MediaUploader';
+import CameraCapture from './CameraCapture';
 
 const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
   const [postType, setPostType] = useState('general');
@@ -35,6 +35,7 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
   const [tagInput, setTagInput] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
 
   const postTypes = [
     { value: 'general', label: 'General Post', icon: MessageSquare, color: 'bg-blue-500' },
@@ -82,6 +83,27 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
 
   const removeTag = (tagToRemove) => {
     setTags(tags.filter(t => t !== tagToRemove));
+  };
+
+  const handleCameraCapture = (fileData) => {
+    // Add captured photo to uploaded files
+    setUploadedFiles((prev) => [...prev, fileData]);
+    
+    // If photo has GPS location, auto-fill location field
+    if (fileData.geotag && fileData.geotag.latitude && fileData.geotag.longitude) {
+      setAutoLocation(fileData.geotag);
+      
+      // If address is available, use it
+      if (fileData.address && fileData.address.full) {
+        setLocation(fileData.address.full);
+      } else {
+        setLocation(`${fileData.geotag.latitude.toFixed(6)}, ${fileData.geotag.longitude.toFixed(6)}`);
+      }
+    }
+  };
+
+  const removeFile = (fileId) => {
+    setUploadedFiles(uploadedFiles.filter(f => f.id !== fileId));
   };
 
   const handleSubmit = () => {
@@ -246,14 +268,74 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
             )}
           </div>
 
-          {/* Media Upload */}
+          {/* Camera Capture */}
           <div className="space-y-2">
-            <Label>Attachments</Label>
-            <MediaUploader 
-              onFilesChange={setUploadedFiles}
-              maxFiles={5}
-            />
+            <Label>Photo Attachment</Label>
+            <div className="space-y-3">
+              {/* Camera Button */}
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full gap-2 border-dashed"
+                onClick={() => setIsCameraOpen(true)}
+              >
+                <Camera className="w-5 h-5" />
+                Open Camera (Secure Capture with GPS)
+              </Button>
+
+              {/* Photo Preview */}
+              {uploadedFiles.length > 0 && (
+                <div className="border rounded-lg p-3 space-y-3">
+                  <p className="text-xs font-semibold text-muted-foreground">CAPTURED PHOTOS</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {uploadedFiles.map((file) => (
+                      <div key={file.id} className="relative group">
+                        <img
+                          src={file.preview}
+                          alt={file.name}
+                          className="w-full h-32 object-cover rounded-lg border"
+                        />
+                        <Button
+                          size="icon"
+                          variant="destructive"
+                          className="absolute top-2 right-2 w-6 h-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => removeFile(file.id)}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                        {/* Location Badge */}
+                        {file.geotag && file.geotag.latitude && (
+                          <Badge 
+                            variant="secondary" 
+                            className="absolute bottom-2 left-2 text-[10px] px-1.5 py-0.5 bg-black/70 text-white border-0"
+                          >
+                            <MapPin className="w-2.5 h-2.5 mr-0.5" />
+                            GPS: {file.geotag.accuracy ? `±${Math.round(file.geotag.accuracy)}m` : 'Yes'}
+                          </Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {uploadedFiles.length} photo{uploadedFiles.length > 1 ? 's' : ''} attached with GPS data
+                  </p>
+                </div>
+              )}
+
+              {/* Security Notice */}
+              <div className="text-xs text-muted-foreground bg-blue-50 dark:bg-blue-950/20 p-2 rounded border border-blue-200">
+                🔒 <strong>Secure Mode:</strong> Photos are captured live with GPS coordinates. 
+                No file uploads allowed to prevent misuse.
+              </div>
+            </div>
           </div>
+
+          {/* Camera Capture Modal */}
+          <CameraCapture
+            isOpen={isCameraOpen}
+            onClose={() => setIsCameraOpen(false)}
+            onCapture={handleCameraCapture}
+          />
 
           {/* Post Preview */}
           {content && (

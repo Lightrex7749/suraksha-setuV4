@@ -26,7 +26,7 @@ const Landing = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="bg-gradient-to-br from-primary to-purple-600 p-3 rounded-xl">
-              <img src="/logo.png" alt="Logo" className="w-10 h-10 object-contain" />
+              <img src="/main_logo.png" alt="Logo" className="w-10 h-10 object-contain" />
             </div>
             <span className="text-2xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
               Suraksha Setu

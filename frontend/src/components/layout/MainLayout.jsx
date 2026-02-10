@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from '@/contexts/AuthContext';
 import ChatBot from '@/components/chatbot/ChatBot';
+import BrandWatermark from '@/components/layout/BrandWatermark';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { useTranslation } from 'react-i18next';
 
@@ -155,11 +156,11 @@ const MainLayout = () => {
         <div className="h-16 flex items-center px-4 border-b border-border justify-between">
           {!collapsed && (
             <div className="flex items-center gap-3 font-bold text-xl tracking-tight">
-              <img src="/logo.png" alt="Suraksha Setu" className="h-12 w-12 object-contain" />
+              <img src="/main_logo.png" alt="Suraksha Setu" className="h-12 w-12 object-contain" />
               <span className="text-primary">Suraksha<span className="text-foreground"> Setu</span></span>
             </div>
           )}
-          {collapsed && <img src="/logo.png" alt="Logo" className="h-12 w-12 object-contain mx-auto" />}
+          {collapsed && <img src="/main_logo.png" alt="Logo" className="h-12 w-12 object-contain mx-auto" />}
           <Button 
             variant="ghost" 
             size="icon" 
@@ -406,6 +407,9 @@ const MainLayout = () => {
           <Outlet />
         </div>
       </main>
+
+      {/* Brand Watermark - Bottom Right Logo */}
+      <BrandWatermark />
 
       {/* Floating Chatbot */}
       <ChatBot />

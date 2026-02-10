@@ -332,7 +332,7 @@ const EnhancedAIChatInterface = () => {
       >
         <Avatar className={`h-12 w-12 shrink-0 ${isBot ? 'bg-white ring-2 ring-purple-100 dark:ring-purple-900' : 'bg-gradient-to-br from-indigo-500 to-purple-600 ring-2 ring-indigo-100 dark:ring-indigo-900'}`}>
           <AvatarFallback className="text-white bg-transparent">
-            {isBot ? <img src="/AI_logo.png" alt="AI" className="h-10 w-10 object-contain" /> : <User className="h-6 w-6" />}
+            {isBot ? <img src="/ai_logo.png" alt="AI" className="h-10 w-10 object-contain" /> : <User className="h-6 w-6" />}
           </AvatarFallback>
         </Avatar>
         <div className={`flex-1 max-w-[85%] md:max-w-[75%] ${isBot ? '' : 'flex flex-col items-end'}`}>
@@ -383,7 +383,7 @@ const EnhancedAIChatInterface = () => {
             {/* Animated AI Avatar */}
             <div className="relative">
               <div className="w-14 h-14 rounded-2xl bg-white/95 backdrop-blur-sm flex items-center justify-center ring-2 ring-white/30 shadow-lg p-2">
-                <img src="/AI_logo.png" alt="Suraksha AI" className="h-full w-full object-contain" />
+                <img src="/ai_logo.png" alt="Suraksha AI" className="h-full w-full object-contain" />
               </div>
               <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 bg-green-400 rounded-full border-2 border-white shadow-md"></span>
             </div>
