@@ -18,13 +18,17 @@ DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
 if DATABASE_URL and DATABASE_URL.startswith('postgresql://'):
     DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://', 1)
 
-# Create async engine
+# Create async engine with SSL support for Render
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,  # Set to True for SQL query logging
     pool_pre_ping=True,  # Verify connections before using
     pool_size=10,
-    max_overflow=20
+    max_overflow=20,
+    connect_args={
+        "ssl": "require",  # Render PostgreSQL requires SSL
+        "server_settings": {"application_name": "suraksha_setu_backend"}
+    }
 )
 
 # Create async session factory
