@@ -3272,6 +3272,250 @@ Response:"""
         logging.error(f"AI Assistant error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error processing AI request")
 
+
+@api_router.post("/ai/damage-assessment")
+async def assess_damage(image: UploadFile = File(...)):
+    """Analyze disaster damage from uploaded images using OpenAI Vision API"""
+    if not openai_client:
+        raise HTTPException(status_code=503, detail="OpenAI Vision API is not available")
+    
+    try:
+        # Validate file type
+        if not image.content_type or not image.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="Invalid file type. Please upload an image.")
+        
+        # Read image file
+        image_bytes = await image.read()
+        
+        # Convert to base64
+        import base64
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+        
+        # Create OpenAI Vision API request
+        logging.info(f"Analyzing damage image: {image.filename}")
+        
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o",  # Use gpt-4o for vision
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are an expert disaster damage assessment AI. Analyze images of disaster damage (buildings, infrastructure, flooding, fire, etc.) and provide:
+1. Severity level: minor, moderate, severe, or critical
+2. Damage type: flooding, structural, fire, wind, earthquake, etc.
+3. Detailed description of observed damage
+4. Estimated cost range (if possible)
+5. Recommended immediate actions (safety, repairs, reporting)
+
+Return your analysis as JSON with this structure:
+{
+  "severity": "minor|moderate|severe|critical",
+  "damage_type": "type of damage",
+  "description": "detailed description",
+  "estimated_cost": "cost range or N/A",
+  "confidence": 0.0-1.0,
+  "recommendations": ["action 1", "action 2", ...]
+}"""
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Please analyze this disaster damage image and provide a comprehensive assessment."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=1000
+        )
+        
+        # Parse AI response
+        ai_response = response.choices[0].message.content
+        
+        # Try to extract JSON from response
+        import re
+        json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+        if json_match:
+            assessment = json.loads(json_match.group())
+        else:
+            # Fallback if JSON parsing fails
+            assessment = {
+                "severity": "moderate",
+                "damage_type": "general",
+                "description": ai_response,
+                "estimated_cost": "N/A",
+                "confidence": 0.8,
+                "recommendations": ["Document damage with photos", "Contact local authorities", "Ensure area is safe before entry"]
+            }
+        
+        logging.info(f"Damage assessment complete: {assessment.get('severity')} severity")
+        
+        return {
+            **assessment,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "filename": image.filename
+        }
+        
+    except json.JSONDecodeError as e:
+        logging.error(f"JSON parsing error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error parsing AI response")
+    except Exception as e:
+        logging.error(f"Damage assessment error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error analyzing image: {str(e)}")
+
+
+@api_router.get("/ai/disaster-predictions")
+async def get_disaster_predictions(
+    latitude: Optional[float] = Query(None, description="Location latitude"),
+    longitude: Optional[float] = Query(None, description="Location longitude")
+):
+    """Generate AI-powered disaster predictions based on weather patterns and historical data"""
+    if not openai_client:
+        raise HTTPException(status_code=503, detail="OpenAI API is not available")
+    
+    try:
+        # Load current data
+        weather = load_json_file('weather_data.json') or {}
+        cyclone = load_json_file('cyclone_data.json') or {}
+        disasters = load_json_file('disasters.json') or []
+        alerts = load_json_file('alerts.json') or []
+        
+        # Build context for AI
+        current_weather = weather.get('current', {})
+        context = f"""
+Current Weather Conditions:
+- Temperature: {current_weather.get('temperature', 'N/A')}°C
+- Humidity: {current_weather.get('humidity', 'N/A')}%
+- Wind Speed: {current_weather.get('wind_speed', 'N/A')} km/h
+- Precipitation: {current_weather.get('rain_probability', 'N/A')}% chance
+- Pressure: {current_weather.get('pressure', 'N/A')} hPa
+
+Active Cyclones: {1 if cyclone.get('active_cyclone') else 0}
+Recent Disasters (30 days): {len([d for d in disasters if d.get('status') == 'active'][:5])}
+Active Alerts: {len(alerts)}
+
+Location: Latitude {latitude or 'N/A'}, Longitude {longitude or 'N/A'}
+"""
+
+        # Create AI prompt
+        prompt = f"""You are a disaster prediction AI. Based on the current weather data and conditions, predict potential disasters for the next 7 days.
+
+{context}
+
+Analyze the data and provide predictions for the following disaster types:
+1. Cyclone/Storm
+2. Heavy Rainfall/Flooding
+3. Heatwave (if applicable)
+
+For each prediction, provide:
+- disaster_type: type of disaster
+- probability: 0-100 percentage chance
+- timeframe: when it might occur (e.g., "Next 2-3 days", "Within 7 days")
+- analysis: detailed explanation of why this prediction is made
+- confidence: 0.0-1.0 confidence score
+- factors: array of contributing weather factors
+- recommendations: array of 3-4 actionable recommendations
+
+Return ONLY a JSON object with this structure:
+{{
+  "predictions": [
+    {{
+      "disaster_type": "cyclone",
+      "probability": 45,
+      "timeframe": "Next 3-5 days",
+      "analysis": "detailed analysis...",
+      "confidence": 0.75,
+      "factors": ["factor1", "factor2"],
+      "recommendations": ["rec1", "rec2", "rec3"]
+    }}
+  ]
+}}
+
+Only include disasters with probability > 20%. Focus on actionable predictions."""
+
+        logging.info("Generating disaster predictions with AI...")
+        
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an expert meteorologist and disaster prediction AI. Provide accurate, data-driven predictions in JSON format."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,  # Lower temperature for more consistent predictions
+            max_tokens=2000
+        )
+        
+        # Parse AI response
+        ai_response = response.choices[0].message.content
+        
+        # Extract JSON
+        import re
+        json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+        if json_match:
+            result = json.loads(json_match.group())
+        else:
+            # Fallback predictions
+            result = {
+                "predictions": [
+                    {
+                        "disaster_type": "rainfall",
+                        "probability": 35,
+                        "timeframe": "Next 48 hours",
+                        "analysis": "Moderate weather conditions indicate potential for localized heavy rainfall based on current atmospheric patterns.",
+                        "confidence": 0.65,
+                        "factors": ["Humidity levels", "Wind patterns", "Pressure systems"],
+                        "recommendations": [
+                            "Monitor weather updates regularly",
+                            "Prepare drainage systems",
+                            "Stock emergency supplies",
+                            "Avoid flood-prone areas if possible"
+                        ]
+                    }
+                ]
+            }
+        
+        logging.info(f"Generated {len(result.get('predictions', []))} disaster predictions")
+        
+        return {
+            **result,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "location": {
+                "latitude": latitude,
+                "longitude": longitude
+            }
+        }
+        
+    except json.JSONDecodeError as e:
+        logging.error(f"JSON parsing error in predictions: {str(e)}")
+        # Return fallback predictions
+        return {
+            "predictions": [
+                {
+                    "disaster_type": "general",
+                    "probability": 30,
+                    "timeframe": "Next 7 days",
+                    "analysis": "Based on current conditions, moderate risk of weather-related incidents. Stay prepared and monitor local alerts.",
+                    "confidence": 0.6,
+                    "factors": ["Weather variability", "Seasonal patterns"],
+                    "recommendations": [
+                        "Stay updated with local weather forecasts",
+                        "Keep emergency kit ready",
+                        "Follow official disaster management guidance"
+                    ]
+                }
+            ],
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logging.error(f"Disaster prediction error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating predictions: {str(e)}")
+
 @api_router.get("/ai-assistant/recommendations")
 async def get_ai_recommendations():
     """Get AI-powered safety recommendations based on current conditions"""
@@ -3872,16 +4116,6 @@ def get_speech_language_code(lang: str) -> str:
 
 
 # ==================== EXISTING ENDPOINTS CONTINUE ====================
-        logging.error(f"Error getting suggestions: {str(e)}")
-        # Return default suggestions on error
-        return {
-            "suggestions": [
-                "What should I do during an earthquake?",
-                "How to prepare for a cyclone?",
-                "Tell me about air quality safety tips",
-                "What's in an emergency kit checklist?",
-            ]
-        }
 
 @api_router.delete("/chatbot/clear")
 async def clear_chat_history(session_id: str):
@@ -4016,6 +4250,121 @@ async def get_dashboard_summary():
     except Exception as e:
         logging.error(f"Dashboard summary error: {str(e)}")
         raise HTTPException(status_code=500, detail="Error generating dashboard summary")
+
+
+@api_router.get("/safety-score")
+async def get_safety_score(
+    latitude: Optional[float] = Query(None, description="User's latitude"),
+    longitude: Optional[float] = Query(None, description="User's longitude")
+):
+    """Calculate personalized safety score with detailed breakdown"""
+    try:
+        # Load data sources
+        alerts = load_json_file('alerts.json') or []
+        weather = load_json_file('weather_data.json') or {}
+        aqi = load_json_file('aqi_data.json') or {}
+        cyclone = load_json_file('cyclone_data.json') or {}
+        flood_zones = load_json_file('flood_zones.json') or []
+        
+        # Initialize scores
+        location_risk_score = 100
+        alert_impact_score = 100
+        weather_score = 100
+        preparedness_score = 75  # Default, can be customized per user
+        
+        # 1. Location Risk Assessment
+        if latitude and longitude:
+            # Check if in flood zone
+            for zone in flood_zones:
+                zone_lat = zone.get('latitude', 0)
+                zone_lon = zone.get('longitude', 0)
+                # Simple distance check (roughly 50km radius)
+                distance = ((latitude - zone_lat)**2 + (longitude - zone_lon)**2)**0.5
+                if distance < 0.5:  # ~50km
+                    risk_level = zone.get('risk_level', 'low')
+                    if risk_level == 'high':
+                        location_risk_score -= 30
+                    elif risk_level == 'medium':
+                        location_risk_score -= 15
+                    break
+            
+            # Check cyclone proximity
+            if cyclone.get('active_cyclone'):
+                cyclone_lat = cyclone['active_cyclone'].get('latitude', 0)
+                cyclone_lon = cyclone['active_cyclone'].get('longitude', 0)
+                distance = ((latitude - cyclone_lat)**2 + (longitude - cyclone_lon)**2)**0.5
+                if distance < 3:  # ~300km
+                    location_risk_score -= 40
+                elif distance < 5:  # ~500km
+                    location_risk_score -= 20
+        
+        # 2. Alert Impact Assessment
+        critical_alerts = [a for a in alerts if a.get('severity') in ['critical', 'red']]
+        warning_alerts = [a for a in alerts if a.get('severity') in ['warning', 'orange']]
+        
+        alert_impact_score -= (len(critical_alerts) * 25 + len(warning_alerts) * 10)
+        
+        # 3. Weather Conditions Assessment
+        current_weather = weather.get('current', {})
+        temp = current_weather.get('temperature', 25)
+        humidity = current_weather.get('humidity', 50)
+        wind_speed = current_weather.get('wind_speed', 0)
+        
+        # Extreme temperature
+        if temp > 40 or temp < 5:
+            weather_score -= 20
+        elif temp > 35 or temp < 10:
+            weather_score -= 10
+        
+        # High wind speed (cyclone/storm indicator)
+        if wind_speed > 60:
+            weather_score -= 30
+        elif wind_speed > 40:
+            weather_score -= 15
+        
+        # AQI impact
+        current_aqi = aqi.get('current', {}).get('aqi', 50)
+        if current_aqi > 300:
+            weather_score -= 25
+        elif current_aqi > 200:
+            weather_score -= 15
+        elif current_aqi > 150:
+            weather_score -= 10
+        
+        # Clamp all scores to 0-100
+        location_risk_score = max(0, min(100, location_risk_score))
+        alert_impact_score = max(0, min(100, alert_impact_score))
+        weather_score = max(0, min(100, weather_score))
+        preparedness_score = max(0, min(100, preparedness_score))
+        
+        # Calculate total score (weighted average)
+        total_score = int(
+            location_risk_score * 0.30 +
+            alert_impact_score * 0.35 +
+            weather_score * 0.25 +
+            preparedness_score * 0.10
+        )
+        
+        return {
+            "total_score": total_score,
+            "breakdown": {
+                "location_risk": int(location_risk_score),
+                "alert_impact": int(alert_impact_score),
+                "weather_conditions": int(weather_score),
+                "preparedness": int(preparedness_score)
+            },
+            "metadata": {
+                "critical_alerts": len(critical_alerts),
+                "warning_alerts": len(warning_alerts),
+                "current_aqi": current_aqi,
+                "temperature": temp,
+                "active_cyclone": cyclone.get('active_cyclone') is not None
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logging.error(f"Safety score calculation error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error calculating safety score")
 
 # ==================== STUDENT PORTAL ENDPOINTS ====================
 

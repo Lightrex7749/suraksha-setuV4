@@ -34,6 +34,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from '@/contexts/AuthContext';
 import ChatBot from '@/components/chatbot/ChatBot';
+import LanguageSwitcher from '@/components/LanguageSwitcher';
+import { useTranslation } from 'react-i18next';
 
 const SidebarItem = ({ icon: Icon, label, path, active, collapsed }) => (
   <Link 
@@ -55,6 +57,7 @@ const MainLayout = () => {
   const navigate = useNavigate();
   const { user, logout, devMode, switchRole } = useAuth();
   const { alerts } = useLocation();
+  const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
@@ -94,14 +97,14 @@ const MainLayout = () => {
 
   // Base navigation items for all users (citizen)
   const baseNavItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/app/dashboard' },
-    { icon: Map, label: 'Live Map', path: '/app/map' },
-    { icon: Bell, label: 'Alerts Center', path: '/app/alerts' },
-    { icon: CloudRain, label: 'Weather & AQI', path: '/app/weather' },
-    { icon: Flame, label: 'Disasters', path: '/app/disasters' },
-    { icon: BarChart3, label: 'Analytics', path: '/app/analytics' },
-    { icon: Users, label: 'Community', path: '/app/community' },
-    { icon: Phone, label: 'Critical Contacts', path: '/app/critical-contacts' },
+    { icon: LayoutDashboard, label: t('nav.dashboard'), path: '/app/dashboard' },
+    { icon: Map, label: t('nav.map'), path: '/app/map' },
+    { icon: Bell, label: t('nav.alerts'), path: '/app/alerts' },
+    { icon: CloudRain, label: t('nav.weather'), path: '/app/weather' },
+    { icon: Flame, label: t('nav.disasters'), path: '/app/disasters' },
+    { icon: BarChart3, label: t('nav.analytics'), path: '/app/analytics' },
+    { icon: Users, label: t('nav.community'), path: '/app/community' },
+    { icon: Phone, label: t('nav.contacts'), path: '/app/critical-contacts' },
   ];
 
   // Role-specific navigation items
@@ -151,12 +154,12 @@ const MainLayout = () => {
       >
         <div className="h-16 flex items-center px-4 border-b border-border justify-between">
           {!collapsed && (
-            <div className="flex items-center gap-2 font-bold text-xl tracking-tight text-primary">
-              <ShieldAlert className="h-6 w-6" />
-              <span>Suraksha<span className="text-foreground"> Setu</span></span>
+            <div className="flex items-center gap-3 font-bold text-xl tracking-tight">
+              <img src="/logo.png" alt="Suraksha Setu" className="h-12 w-12 object-contain" />
+              <span className="text-primary">Suraksha<span className="text-foreground"> Setu</span></span>
             </div>
           )}
-          {collapsed && <ShieldAlert className="h-6 w-6 text-primary mx-auto" />}
+          {collapsed && <img src="/logo.png" alt="Logo" className="h-12 w-12 object-contain mx-auto" />}
           <Button 
             variant="ghost" 
             size="icon" 
@@ -301,6 +304,8 @@ const MainLayout = () => {
                 {alerts.find(a => a.severity === 'critical' || a.severity === 'red')?.title || 'Critical Alert'}
               </div>
             )}
+            {/* Language Switcher */}
+            <LanguageSwitcher />
             {/* Bell Icon with Alerts Dropdown */}
             <div className="relative" ref={alertsDropdownRef}>
               <Button 

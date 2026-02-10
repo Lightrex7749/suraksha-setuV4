@@ -107,8 +107,8 @@ const Login = () => {
       <Card className="w-full max-w-md border-border/50 shadow-2xl bg-card/95 backdrop-blur">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <div className="h-14 w-14 bg-gradient-to-br from-primary to-purple-500 rounded-full flex items-center justify-center shadow-lg">
-              <ShieldAlert className="h-7 w-7 text-white" />
+            <div className="h-24 w-24 bg-gradient-to-br from-primary to-purple-500 rounded-full flex items-center justify-center shadow-lg p-4">
+              <img src="/logo.png" alt="Suraksha Setu" className="h-full w-full object-contain" />
             </div>
           </div>
           <CardTitle className="text-3xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
