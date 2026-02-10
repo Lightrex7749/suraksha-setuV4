@@ -566,8 +566,8 @@ const Weather = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-64" style={{ minHeight: '256px' }}>
+                <ResponsiveContainer width="100%" height={256}>
                   <ComposedChart data={aqiHistory.history}>
                     <defs>
                       <linearGradient id="aqiGradient" x1="0" y1="0" x2="0" y2="1">
@@ -1010,8 +1010,8 @@ const Weather = () => {
                 </Badge>
               </div>
             </CardHeader>
-            <CardContent className="h-[450px] pt-6">
-              <ResponsiveContainer width="100%" height="100%">
+            <CardContent className="h-[450px]" style={{ minHeight: '450px' }}>
+              <ResponsiveContainer width="100%" height={450}>
                 <ComposedChart data={hourlyData}>
                   <defs>
                     <linearGradient id="tempGradient" x1="0" y1="0" x2="0" y2="1">
