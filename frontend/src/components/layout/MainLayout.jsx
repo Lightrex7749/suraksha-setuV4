@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Link, useLocation, Outlet } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { Link, useLocation as useRouterLocation, Outlet, useNavigate } from 'react-router-dom';
+import { useLocation } from '@/contexts/LocationContext';
 import { 
   LayoutDashboard, 
   Map, 
@@ -50,10 +51,31 @@ const SidebarItem = ({ icon: Icon, label, path, active, collapsed }) => (
 );
 
 const MainLayout = () => {
-  const location = useLocation();
+  const routerLocation = useRouterLocation();
+  const navigate = useNavigate();
   const { user, logout, devMode, switchRole } = useAuth();
+  const { alerts } = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
+  const alertsDropdownRef = useRef(null);
+
+  // Close alerts dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (alertsDropdownRef.current && !alertsDropdownRef.current.contains(event.target)) {
+        setShowAlertsDropdown(false);
+      }
+    };
+
+    if (showAlertsDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showAlertsDropdown]);
 
   const getInitials = (name) => {
     if (!name) return 'U';
@@ -158,7 +180,7 @@ const MainLayout = () => {
             <SidebarItem 
               key={item.path} 
               {...item} 
-              active={location.pathname === item.path} 
+              active={routerLocation.pathname === item.path} 
               collapsed={collapsed}
             />
           ))}
@@ -266,17 +288,111 @@ const MainLayout = () => {
                 DEV MODE
               </Badge>
             )}
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-destructive/10 text-destructive rounded-full text-sm font-medium animate-pulse">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
-              </span>
-              Cyclone Alert: Odisha Coast
+            {/* Dynamic Alert Badge - Only show if there are critical alerts */}
+            {alerts && alerts.length > 0 && alerts.some(a => a.severity === 'critical' || a.severity === 'red') && (
+              <div 
+                className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-destructive/10 text-destructive rounded-full text-sm font-medium animate-pulse cursor-pointer hover:bg-destructive/20 transition-colors"
+                onClick={() => navigate('/app/alerts')}
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-destructive"></span>
+                </span>
+                {alerts.find(a => a.severity === 'critical' || a.severity === 'red')?.title || 'Critical Alert'}
+              </div>
+            )}
+            {/* Bell Icon with Alerts Dropdown */}
+            <div className="relative" ref={alertsDropdownRef}>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="relative"
+                onClick={() => setShowAlertsDropdown(!showAlertsDropdown)}
+              >
+                <Bell className="h-5 w-5 text-muted-foreground" />
+                {alerts && alerts.length > 0 && (
+                  <span className="absolute top-2 right-2 h-2 w-2 bg-destructive rounded-full border-2 border-background animate-pulse"></span>
+                )}
+              </Button>
+              
+              {/* Alerts Dropdown */}
+              {showAlertsDropdown && (
+                <div className="absolute right-0 top-12 w-80 bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-3 flex items-center justify-between">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <Bell className="w-4 h-4" />
+                      Alerts ({alerts?.length || 0})
+                    </h3>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-white hover:bg-white/20 rounded-lg"
+                      onClick={() => setShowAlertsDropdown(false)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto scrollbar-thin">
+                    {alerts && alerts.length > 0 ? (
+                      <div className="divide-y divide-border">
+                        {alerts.slice(0, 5).map((alert, idx) => (
+                          <div
+                            key={alert.id || idx}
+                            className="p-3 hover:bg-muted/50 cursor-pointer transition-colors"
+                            onClick={() => {
+                              navigate('/app/alerts');
+                              setShowAlertsDropdown(false);
+                            }}
+                          >
+                            <div className="flex items-start gap-2">
+                              <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                                alert.severity === 'critical' || alert.severity === 'red'
+                                  ? 'bg-red-500 animate-pulse'
+                                  : alert.severity === 'warning' || alert.severity === 'orange'
+                                  ? 'bg-orange-500'
+                                  : 'bg-blue-500'
+                              }`} />
+                              <div className="flex-1 min-w-0">
+                                <h4 className="text-sm font-semibold text-foreground truncate">
+                                  {alert.title}
+                                </h4>
+                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                                  {alert.description || alert.message}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground mt-1">
+                                  {alert.location || 'Unknown'} • {new Date(alert.issued_at || alert.time).toLocaleTimeString()}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-6 text-center text-muted-foreground">
+                        <Bell className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-sm">No active alerts</p>
+                        <p className="text-xs mt-1">You're all good for now!</p>
+                      </div>
+                    )}
+                  </div>
+                  {alerts && alerts.length > 0 && (
+                    <div className="border-t border-border p-2 bg-muted/30">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-xs hover:bg-muted"
+                        onClick={() => {
+                          navigate('/app/alerts');
+                          setShowAlertsDropdown(false);
+                        }}
+                      >
+                        View All Alerts →
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5 text-muted-foreground" />
-              <span className="absolute top-2 right-2 h-2 w-2 bg-destructive rounded-full border-2 border-background"></span>
-            </Button>
           </div>
         </header>
 
