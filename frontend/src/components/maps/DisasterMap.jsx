@@ -9,11 +9,10 @@ import { toast } from 'sonner';
 import axios from 'axios';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
-const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || 'AIzaSyBRYE9Q6Y9Q9Q9Q9Q9Q9Q9Q9Q9Q9Q9Q9Q'; // Demo key
+const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || 'YOUR_GOOGLE_MAPS_API_KEY_HERE';
 
 // Move libraries outside component to prevent re-renders
-// Note: AdvancedMarkerElement is available in the core Maps API (v=weekly)
-const GOOGLE_MAPS_LIBRARIES = ['places'];
+const GOOGLE_MAPS_LIBRARIES = ['places', 'marker'];
 
 const mapContainerStyle = {
   width: '100%',
@@ -31,6 +30,7 @@ const mapOptions = {
   streetViewControl: false,
   mapTypeControl: true,
   fullscreenControl: true,
+  mapId: 'SURAKSHA_SETU_MAP', // Required for AdvancedMarkerElement
 };
 
 // Helper function to create marker icons

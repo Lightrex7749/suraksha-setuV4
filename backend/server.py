@@ -3,7 +3,6 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
@@ -13,6 +12,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import json
 import google.generativeai as genai
+from openai import AsyncOpenAI
 from passlib.context import CryptContext
 import jwt
 import httpx
@@ -22,6 +22,15 @@ import asyncio
 from pywebpush import webpush, WebPushException
 from py_vapid import Vapid
 from cryptography.hazmat.primitives import serialization
+from sqlalchemy import select, update, delete
+from sqlalchemy.exc import IntegrityError
+
+# Import database and models
+from database import (
+    get_db, init_db, close_db, AsyncSessionLocal,
+    User, ChatMessage, Alert, CommunityReport, StatusCheck, 
+    PushSubscription, CommunityPost, Comment
+)
 
 # Import translation service
 from translation_service import translate_response, SUPPORTED_LANGUAGES, get_translation_service
@@ -29,41 +38,40 @@ from translation_service import translate_response, SUPPORTED_LANGUAGES, get_tra
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# In-memory storage (replace with MongoDB in production)
-in_memory_db = {
-    "users": {},
-    "chat_messages": [],
-    "community_reports": [],
-    "status_checks": [],
-    "push_subscriptions": []  # Store push notification subscriptions
-}
+# PostgreSQL is configured in database.py
+# No need for in-memory storage anymore
+logging.info("PostgreSQL database configured via SQLAlchemy")
 
-# MongoDB connection (optional - for future use)
-mongo_url = os.environ.get('MONGO_URL')
-if mongo_url:
-    client = AsyncIOMotorClient(mongo_url)
-    db = client[os.environ.get('DB_NAME', 'suraksha_setu')]
-    use_mongo = True
+# Configure OpenAI (ChatGPT) - Primary AI backend
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+if OPENAI_API_KEY:
+    openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+    logging.info("Successfully initialized OpenAI (ChatGPT) API")
 else:
-    client = None
-    db = None
-    use_mongo = False
-    logging.warning("MongoDB not configured. Using in-memory storage.")
+    openai_client = None
+    logging.warning("OpenAI API key not found. ChatGPT features will be disabled.")
 
-# Configure Gemini AI
+# Configure Gemini AI - Fallback AI backend
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     # Use gemini-2.0-flash which is available
     try:
         gemini_model = genai.GenerativeModel('gemini-2.0-flash')
-        logging.info("Successfully initialized Gemini AI with gemini-2.0-flash model")
+        logging.info("Successfully initialized Gemini AI with gemini-2.0-flash model (fallback)")
     except Exception as e:
         logging.error(f"Failed to initialize Gemini AI: {e}")
         gemini_model = None
 else:
     gemini_model = None
-    logging.warning("Gemini API key not found. AI features will be disabled.")
+    logging.warning("Gemini API key not found. Gemini fallback disabled.")
+
+# Mapbox configuration
+MAPBOX_ACCESS_TOKEN = os.environ.get('MAPBOX_ACCESS_TOKEN', '')
+if MAPBOX_ACCESS_TOKEN:
+    logging.info("Mapbox token configured")
+else:
+    logging.warning("Mapbox token not found. Map features will use default providers.")
 
 # Security configuration
 SECRET_KEY = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production-12345678')
@@ -242,7 +250,9 @@ class PushNotificationManager:
     """Manages push notification subscriptions and sending"""
     
     def __init__(self):
-        self.subscriptions = in_memory_db["push_subscriptions"]
+        # TODO: Migrate to PostgreSQL database
+        # Using temporary in-memory list until full migration is complete
+        self.subscriptions = []
     
     def add_subscription(self, subscription_info: Dict[str, Any]) -> bool:
         """Add a new push subscription"""
@@ -361,8 +371,25 @@ def get_language_from_request(request: Request) -> str:
 # Lifespan handler will be added later after imports
 from contextlib import asynccontextmanager
 
-# Create the main app without a prefix
-app = FastAPI(title="Suraksha Setu API", version="1.0.0")
+# Database lifecycle management
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize database
+    logging.info("Initializing PostgreSQL database...")
+    await init_db()
+    logging.info("Database initialized successfully")
+    yield
+    # Shutdown: Close database connections
+    logging.info("Closing database connections...")
+    await close_db()
+    logging.info("Database connections closed")
+
+# Create the main app with lifespan manager
+app = FastAPI(
+    title="Suraksha Setu API", 
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -3489,10 +3516,9 @@ class SimpleChatRequest(BaseModel):
     language: Optional[str] = "en-IN"
 
 @api_router.post("/chat")
-async def simple_chat(request: SimpleChatRequest):
-    """Simple chat endpoint for voice chatbot - optimized for quick responses"""
-    if not gemini_model:
-        raise HTTPException(status_code=503, detail="AI service is not available")
+async def simple_chat(request: SimpleChatRequest, db: AsyncSessionLocal = Depends(get_db)):
+    """Simple chat endpoint for voice chatbot - optimized for quick responses
+    Uses OpenAI ChatGPT as primary, Gemini as fallback"""
     
     try:
         # Get real-time disaster context
@@ -3504,12 +3530,10 @@ async def simple_chat(request: SimpleChatRequest):
 • AQI: {disaster_context.get('air_quality', {}).get('aqi', 'N/A')} ({disaster_context.get('air_quality', {}).get('category', 'N/A')})
 • Active Alerts: {disaster_context.get('alert_count', 0)}"""
         
-        # Enhanced prompt for natural conversation
-        prompt = f"""You are Suraksha AI, a friendly disaster management and safety expert in India.
+        # System message for OpenAI
+        system_message = f"""You are Suraksha AI, a friendly disaster management and safety expert in India.
 
 {context_info}
-
-User: {request.message}
 
 IMPORTANT:
 - Answer naturally and conversationally (like ChatGPT)
@@ -3519,12 +3543,63 @@ IMPORTANT:
 - If emergency: Give immediate safety steps first
 - Support multilingual queries (Hindi, Tamil, Telugu, Bengali, Marathi, English)
 - Be warm, helpful, and empathetic
-- If greeting: Respond warmly and offer help
+- If greeting: Respond warmly and offer help"""
+
+        response_text = None
+        
+        # Try OpenAI ChatGPT first
+        if openai_client:
+            try:
+                logging.info("Using OpenAI ChatGPT for response")
+                completion = await openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": request.message}
+                    ],
+                    max_tokens=500,
+                    temperature=0.7
+                )
+                response_text = completion.choices[0].message.content
+                logging.info("ChatGPT response generated successfully")
+            except Exception as openai_error:
+                logging.error(f"OpenAI error: {str(openai_error)}, falling back to Gemini")
+        
+        # Fallback to Gemini if OpenAI failed or not available
+        if not response_text and gemini_model:
+            try:
+                logging.info("Using Gemini as fallback")
+                prompt = f"""{system_message}
+
+User: {request.message}
 
 Answer:"""
-
-        response = gemini_model.generate_content(prompt)
-        response_text = response.text if hasattr(response, 'text') else str(response)
+                response = gemini_model.generate_content(prompt)
+                response_text = response.text if hasattr(response, 'text') else str(response)
+                logging.info("Gemini response generated successfully")
+            except Exception as gemini_error:
+                logging.error(f"Gemini error: {str(gemini_error)}")
+        
+        # If both AI services failed, use smart fallback
+        if not response_text:
+            response_text = get_fallback_response(request.message)
+        
+        # Save chat message to PostgreSQL database
+        try:
+            chat_msg = ChatMessage(
+                user_id=request.user_id if hasattr(request, 'user_id') else None,
+                session_id=request.session_id if hasattr(request, 'session_id') else str(uuid.uuid4()),
+                message=request.message,
+                response=response_text,
+                language=request.language if hasattr(request, 'language') else 'en',
+                context=disaster_context
+            )
+            db.add(chat_msg)
+            await db.commit()
+            logging.info(f"Chat message saved to database (ID: {chat_msg.id})")
+        except Exception as db_error:
+            logging.error(f"Failed to save chat message to database: {str(db_error)}")
+            # Don't fail the request if database save fails
         
         return {
             "response": response_text,
@@ -3532,31 +3607,15 @@ Answer:"""
             "data": {
                 "weather": disaster_context.get('current_weather'),
                 "aqi": disaster_context.get('air_quality'),
-                "alerts": disaster_context.get('active_alerts', [])[:3]  # Top 3 alerts
+                "alerts": disaster_context.get('active_alerts', [])[:3],  # Top 3 alerts
+                "ai_source": "openai" if openai_client and response_text else "gemini" if gemini_model else "fallback"
             },
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
     except Exception as e:
         logging.error(f"Simple chat error: {str(e)}")
-        
-        # Smart fallback responses based on keywords
-        message_lower = request.message.lower()
-        
-        if "429" in str(e) or "quota" in str(e).lower():
-            fallback = "I'm experiencing high demand right now. Please try again in a moment. For emergencies, dial 112."
-        elif any(word in message_lower for word in ['barish', 'rain', 'baarish']):
-            fallback = "🌧️ For rainfall updates, check the Weather section in your dashboard. Stay safe and carry an umbrella if rain is expected!"
-        elif any(word in message_lower for word in ['aqi', 'air quality', 'pollution']):
-            fallback = "💨 Check the AQI section for real-time air quality data in your area. If AQI is high, limit outdoor activities and use masks."
-        elif any(word in message_lower for word in ['flood', 'baarh', 'bhaadh']):
-            fallback = "🌊 During floods: Move to higher ground immediately, avoid walking/driving through water, and keep emergency contacts handy."
-        elif any(word in message_lower for word in ['alert', 'warning']):
-            fallback = "🚨 Check the Alerts tab for active warnings in your area. Enable notifications to stay updated on critical alerts."
-        elif any(word in message_lower for word in ['hello', 'hi', 'hey', 'namaste']):
-            fallback = "👋 Hello! I'm Suraksha AI, your disaster safety assistant. Ask me about weather, air quality, floods, earthquakes, or any safety concerns!"
-        else:
-            fallback = "I'm here to help! Ask me about weather forecasts, air quality, disaster alerts, safety tips, or any emergency-related questions."
+        fallback = get_fallback_response(request.message)
         
         return {
             "response": fallback,
@@ -3564,6 +3623,161 @@ Answer:"""
             "data": {},
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
+
+def get_fallback_response(message: str) -> str:
+    """Smart fallback responses based on keywords"""
+    message_lower = message.lower()
+    
+    if any(word in message_lower for word in ['barish', 'rain', 'baarish']):
+        return "🌧️ For rainfall updates, check the Weather section in your dashboard. Stay safe and carry an umbrella if rain is expected!"
+    elif any(word in message_lower for word in ['aqi', 'air quality', 'pollution']):
+        return "💨 Check the AQI section for real-time air quality data in your area. If AQI is high, limit outdoor activities and use masks."
+    elif any(word in message_lower for word in ['flood', 'baarh', 'bhaadh']):
+        return "🌊 During floods: Move to higher ground immediately, avoid walking/driving through water, and keep emergency contacts handy."
+    elif any(word in message_lower for word in ['alert', 'warning']):
+        return "🚨 Check the Alerts tab for active warnings in your area. Enable notifications to stay updated on critical alerts."
+    elif any(word in message_lower for word in ['hello', 'hi', 'hey', 'namaste']):
+        return "👋 Hello! I'm Suraksha AI, your disaster safety assistant. Ask me about weather, air quality, floods, earthquakes, or any safety concerns!"
+    else:
+        return "I'm here to help! Ask me about weather forecasts, air quality, disaster alerts, safety tips, or any emergency-related questions."
+
+# ==================== VOICE TRANSCRIPTION WITH BYTEZ ====================
+
+# Initialize Bytez SDK
+BYTEZ_API_KEY = os.environ.get('BYTEZ_API_KEY', '5e625acdba9835a6c0bff4dbe5825aa3')
+
+try:
+    from bytez import Bytez
+    bytez_sdk = Bytez(BYTEZ_API_KEY)
+    bytez_model = bytez_sdk.model("openai/whisper-1")
+    logging.info("Bytez Whisper model initialized successfully")
+except ImportError:
+    logging.warning("Bytez not installed. Voice transcription will be disabled. Install with: pip install bytez")
+    bytez_sdk = None
+    bytez_model = None
+except Exception as e:
+    logging.error(f"Failed to initialize Bytez: {str(e)}")
+    bytez_sdk = None
+    bytez_model = None
+
+@api_router.post("/voice/transcribe")
+async def transcribe_voice(audio_file: UploadFile = File(...)):
+    """Transcribe voice audio to text using Bytez Whisper model"""
+    if not bytez_model:
+        raise HTTPException(
+            status_code=503,
+            detail="Voice transcription service is not available. Please install bytez: pip install bytez"
+        )
+    
+    try:
+        # Save uploaded audio file temporarily
+        temp_audio_path = f"/tmp/audio_{uuid.uuid4()}.{audio_file.filename.split('.')[-1]}"
+        with open(temp_audio_path, "wb") as f:
+            content = await audio_file.read()
+            f.write(content)
+        
+        logging.info(f"Processing voice file: {temp_audio_path}")
+        
+        # Run Whisper transcription with Bytez
+        results = bytez_model.run(temp_audio_path)
+        
+        # Clean up temp file
+        os.remove(temp_audio_path)
+        
+        if results.error:
+            logging.error(f"Bytez transcription error: {results.error}")
+            raise HTTPException(status_code=500, detail=f"Transcription failed: {results.error}")
+        
+        transcribed_text = results.output
+        
+        logging.info(f"Transcription successful: {transcribed_text[:100]}...")
+        
+        return {
+            "success": True,
+            "text": transcribed_text,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logging.error(f"Voice transcription error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error transcribing audio: {str(e)}")
+
+@api_router.post("/voice/chat")
+async def voice_chat(audio_file: UploadFile = File(...)):
+    """Complete voice interaction: transcribe audio, get AI response, return both text and voice-optimized response"""
+    if not bytez_model:
+        raise HTTPException(
+            status_code=503,
+            detail="Voice service is not available"
+        )
+    
+    try:
+        # Step 1: Transcribe audio to text
+        temp_audio_path = f"/tmp/audio_{uuid.uuid4()}.{audio_file.filename.split('.')[-1]}"
+        with open(temp_audio_path, "wb") as f:
+            content = await audio_file.read()
+            f.write(content)
+        
+        results = bytez_model.run(temp_audio_path)
+        os.remove(temp_audio_path)
+        
+        if results.error:
+            raise HTTPException(status_code=500, detail=f"Transcription failed: {results.error}")
+        
+        user_message = results.output
+        
+        # Step 2: Get AI response using simple_chat logic
+        disaster_context = await get_disaster_context()
+        
+        system_message = f"""You are Suraksha AI. Answer conversationally and concisely (2-3 sentences max for voice).
+
+Current Status:
+• Weather: {disaster_context.get('current_weather', {}).get('temperature', 'N/A')}°C
+• AQI: {disaster_context.get('air_quality', {}).get('aqi', 'N/A')}
+• Alerts: {disaster_context.get('alert_count', 0)}
+
+Keep responses SHORT for voice playback."""
+
+        response_text = None
+        
+        # Try OpenAI first
+        if openai_client:
+            try:
+                completion = await openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": user_message}
+                    ],
+                    max_tokens=150,  # Shorter for voice
+                    temperature=0.7
+                )
+                response_text = completion.choices[0].message.content
+            except Exception as e:
+                logging.error(f"OpenAI error in voice chat: {str(e)}")
+        
+        # Fallback to Gemini
+        if not response_text and gemini_model:
+            try:
+                prompt = f"{system_message}\n\nUser: {user_message}\n\nAnswer:"
+                response = gemini_model.generate_content(prompt)
+                response_text = response.text if hasattr(response, 'text') else str(response)
+            except Exception as e:
+                logging.error(f"Gemini error in voice chat: {str(e)}")
+        
+        if not response_text:
+            response_text = get_fallback_response(user_message)
+        
+        return {
+            "success": True,
+            "transcription": user_message,
+            "response": response_text,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logging.error(f"Voice chat error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Voice chat failed: {str(e)}")
 
 # ==================== EXISTING ENDPOINTS CONTINUE ====================
         logging.error(f"Error getting suggestions: {str(e)}")
@@ -4192,6 +4406,224 @@ async def import_model(file: UploadFile = File(...)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
+
+
+# ==================== COMMUNITY POSTS ENDPOINTS ====================
+
+class CommunityPostCreate(BaseModel):
+    """Model for creating a community post"""
+    title: Optional[str] = None
+    content: str
+    type: str = "general"  # general, help, offer, alert, emergency
+    location: Optional[str] = None
+    geolocation: Optional[Dict[str, float]] = None
+    tags: List[str] = []
+    media: List[Dict[str, Any]] = []
+
+class CommunityCommentCreate(BaseModel):
+    """Model for creating a comment"""
+    content: str
+    parent_id: Optional[str] = None  # For nested comments/replies
+
+@api_router.get("/community/posts")
+async def get_community_posts(
+    type: Optional[str] = Query(None, description="Filter by post type"),
+    location: Optional[str] = Query(None, description="Filter by location"),
+    limit: int = Query(50, le=100),
+    skip: int = Query(0, ge=0)
+):
+    """Get community posts with optional filtering"""
+    try:
+        # Use in-memory storage for now
+        posts = in_memory_db.get("community_posts", [])
+        
+        # Filter by type if provided
+        if type:
+            posts = [p for p in posts if p.get('type', '').lower() == type.lower()]
+        
+        # Filter by location if provided
+        if location:
+            posts = [p for p in posts if location.lower() in p.get('location', '').lower()]
+        
+        # Sort by timestamp (newest first)
+        posts.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        
+        # Pagination
+        total = len(posts)
+        posts = posts[skip:skip + limit]
+        
+        return {
+            "posts": posts,
+            "total": total,
+            "limit": limit,
+            "skip": skip,
+            "has_more": skip + limit < total
+        }
+    except Exception as e:
+        logging.error(f"Error fetching community posts: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch posts")
+
+@api_router.post("/community/posts")
+async def create_community_post(post_data: CommunityPostCreate):
+    """Create a new community post"""
+    try:
+        # Create post object
+        post = {
+            "id": str(uuid.uuid4()),
+            "title": post_data.title,
+            "content": post_data.content,
+            "type": post_data.type,
+            "location": post_data.location,
+            "geolocation": post_data.geolocation,
+            "tags": post_data.tags,
+            "media": post_data.media,
+            "author": "Current User",  # Replace with actual user from auth
+            "userId": "current_user_id",  # Replace with actual user ID
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "likes": 0,
+            "likedByUser": False,
+            "savedByUser": False,
+            "comments": []
+        }
+        
+        # Save to in-memory storage
+        if "community_posts" not in in_memory_db:
+            in_memory_db["community_posts"] = []
+        
+        in_memory_db["community_posts"].append(post)
+        
+        return {
+            "success": True,
+            "message": "Post created successfully",
+            "post": post
+        }
+    except Exception as e:
+        logging.error(f"Error creating community post: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create post")
+
+@api_router.post("/community/posts/{post_id}/like")
+async def like_community_post(post_id: str, unlike: bool = False):
+    """Like or unlike a community post"""
+    try:
+        posts = in_memory_db.get("community_posts", [])
+        post = next((p for p in posts if p.get('id') == post_id), None)
+        
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+        
+        if unlike:
+            post['likes'] = max(0, post.get('likes', 0) - 1)
+            post['likedByUser'] = False
+        else:
+            post['likes'] = post.get('likes', 0) + 1
+            post['likedByUser'] = True
+        
+        return {
+            "success": True,
+            "post_id": post_id,
+            "likes": post['likes'],
+            "liked": post['likedByUser']
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error liking post: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update post")
+
+@api_router.post("/community/posts/{post_id}/comments")
+async def add_comment_to_post(post_id: str, comment_data: CommunityCommentCreate):
+    """Add a comment to a community post"""
+    try:
+        posts = in_memory_db.get("community_posts", [])
+        post = next((p for p in posts if p.get('id') == post_id), None)
+        
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+        
+        # Create comment object
+        comment = {
+            "id": str(uuid.uuid4()),
+            "userId": "current_user_id",  # Replace with actual user ID
+            "author": "Current User",  # Replace with actual user name
+            "content": comment_data.content,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "likes": 0,
+            "likedByUser": False,
+            "replies": [],
+            "edited": False
+        }
+        
+        # Add comment to post
+        if 'comments' not in post:
+            post['comments'] = []
+        
+        # If parent_id is provided, add as a reply
+        if comment_data.parent_id:
+            parent_comment = next((c for c in post['comments'] if c.get('id') == comment_data.parent_id), None)
+            if parent_comment:
+                if 'replies' not in parent_comment:
+                    parent_comment['replies'] = []
+                parent_comment['replies'].append(comment)
+        else:
+            post['comments'].append(comment)
+        
+        return {
+            "success": True,
+            "message": "Comment added successfully",
+            "comment": comment
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error adding comment: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to add comment")
+
+@api_router.delete("/community/posts/{post_id}")
+async def delete_community_post(post_id: str):
+    """Delete a community post"""
+    try:
+        posts = in_memory_db.get("community_posts", [])
+        post = next((p for p in posts if p.get('id') == post_id), None)
+        
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+        
+        # Remove post from list
+        in_memory_db["community_posts"] = [p for p in posts if p.get('id') != post_id]
+        
+        return {
+            "success": True,
+            "message": "Post deleted successfully",
+            "post_id": post_id
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error deleting post: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete post")
+
+@api_router.post("/community/posts/{post_id}/save")
+async def save_community_post(post_id: str, unsave: bool = False):
+    """Save or unsave a community post for later"""
+    try:
+        posts = in_memory_db.get("community_posts", [])
+        post = next((p for p in posts if p.get('id') == post_id), None)
+        
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+        
+        post['savedByUser'] = not unsave
+        
+        return {
+            "success": True,
+            "post_id": post_id,
+            "saved": post['savedByUser']
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error saving post: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to save post")
 
 
 # Include the router in the main app

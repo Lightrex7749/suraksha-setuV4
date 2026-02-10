@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import AIChatInterface from '@/components/dashboard/AIChatInterface';
+import EnhancedAIChatInterface from '@/components/dashboard/EnhancedAIChatInterface';
 import SurakshaScore from '@/components/dashboard/SurakshaScore';
 import WeatherSummary from '@/components/dashboard/WeatherSummary';
 import ActiveAlerts from '@/components/dashboard/ActiveAlerts';
@@ -134,13 +134,13 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto p-4">
-      {/* AI Chat Interface - Prominent Top Section with Animation */}
+      {/* Enhanced AI Chat Interface - Voice-Enabled with Premium UX */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <AIChatInterface />
+        <EnhancedAIChatInterface />
       </motion.div>
 
       <motion.div 

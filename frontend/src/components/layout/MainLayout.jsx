@@ -14,7 +14,8 @@ import {
   Menu,
   X,
   Search,
-  UserCircle
+  UserCircle,
+  Phone
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,7 +60,8 @@ const MainLayout = () => {
     return labels[type] || 'User';
   };
 
-  const navItems = [
+  // Base navigation items for all users (citizen)
+  const baseNavItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/app/dashboard' },
     { icon: Map, label: 'Live Map', path: '/app/map' },
     { icon: Bell, label: 'Alerts Center', path: '/app/alerts' },
@@ -67,10 +69,39 @@ const MainLayout = () => {
     { icon: Flame, label: 'Disasters', path: '/app/disasters' },
     { icon: BarChart3, label: 'Analytics', path: '/app/analytics' },
     { icon: Users, label: 'Community', path: '/app/community' },
-    { icon: GraduationCap, label: 'Student Portal', path: '/app/student' },
-    { icon: Microscope, label: 'Scientist Portal', path: '/app/scientist' },
-    { icon: ShieldAlert, label: 'Admin', path: '/app/admin' },
+    { icon: Phone, label: 'Critical Contacts', path: '/app/critical-contacts' },
   ];
+
+  // Role-specific navigation items
+  const roleNavItems = {
+    student: { icon: GraduationCap, label: 'Student Portal', path: '/app/student' },
+    scientist: { icon: Microscope, label: 'Scientist Portal', path: '/app/scientist' },
+    admin: { icon: ShieldAlert, label: 'Admin Dashboard', path: '/app/admin' },
+  };
+
+  // Build navigation items based on user role
+  const getNavItems = () => {
+    const items = [...baseNavItems];
+    const userRole = user?.role || 'citizen';
+
+    if (userRole === 'admin') {
+      // Admin sees all tabs
+      items.push(roleNavItems.student);
+      items.push(roleNavItems.scientist);
+      items.push(roleNavItems.admin);
+    } else if (userRole === 'student') {
+      // Student sees base + student tab
+      items.push(roleNavItems.student);
+    } else if (userRole === 'scientist') {
+      // Scientist sees base + scientist tab
+      items.push(roleNavItems.scientist);
+    }
+    // Citizen sees only base tabs
+
+    return items;
+  };
+
+  const navItems = getNavItems();
 
   return (
     <div className="min-h-screen bg-background flex overflow-hidden">

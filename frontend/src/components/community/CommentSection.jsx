@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import axios from 'axios';
+import { toast } from 'sonner';
 import { 
   Send, ThumbsUp, Reply, MoreVertical, 
   Trash2, Edit2, Flag, Heart
@@ -14,6 +16,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+
+const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
 
 const Comment = ({ 
   comment, 
@@ -226,63 +230,65 @@ const CommentSection = ({ postId, comments: initialComments = [], onCommentsChan
   const [newComment, setNewComment] = useState('');
   const [sortBy, setSortBy] = useState('newest'); // newest, oldest, popular
 
-  const addComment = () => {
+  const addComment = async () => {
     if (!newComment.trim()) return;
 
-    const comment = {
-      id: Math.random().toString(36).substr(2, 9),
-      postId,
-      userId: 'current-user',
-      author: 'You',
-      content: newComment.trim(),
-      timestamp: new Date().toISOString(),
-      likes: 0,
-      likedByUser: false,
-      replies: [],
-      edited: false
-    };
+    try {
+      const response = await axios.post(`${API_URL}/community/posts/${postId}/comments`, {
+        content: newComment.trim(),
+        parent_id: null
+      });
 
-    const updatedComments = [comment, ...comments];
-    setComments(updatedComments);
-    onCommentsChange?.(updatedComments);
-    setNewComment('');
+      if (response.data.success && response.data.comment) {
+        const updatedComments = [response.data.comment, ...comments];
+        setComments(updatedComments);
+        onCommentsChange?.(updatedComments);
+        setNewComment('');
+        toast.success('Comment added!');
+      }
+    } catch (error) {
+      console.error('Error adding comment:', error);
+      toast.error('Failed to add comment. Please try again.');
+    }
   };
 
-  const addReply = (parentCommentId, replyText) => {
-    const reply = {
-      id: Math.random().toString(36).substr(2, 9),
-      postId,
-      userId: 'current-user',
-      author: 'You',
-      content: replyText,
-      timestamp: new Date().toISOString(),
-      likes: 0,
-      likedByUser: false,
-      replies: [],
-      edited: false
-    };
-
-    const addReplyToComment = (commentsList) => {
-      return commentsList.map(comment => {
-        if (comment.id === parentCommentId) {
-          return {
-            ...comment,
-            replies: [...(comment.replies || []), reply]
-          };
-        }
-        if (comment.replies?.length > 0) {
-          return {
-            ...comment,
-            replies: addReplyToComment(comment.replies)
-          };
-        }
-        return comment;
+  const addReply = async (parentCommentId, replyText) => {
+    try {
+      const response = await axios.post(`${API_URL}/community/posts/${postId}/comments`, {
+        content: replyText,
+        parent_id: parentCommentId
       });
-    };
 
-    const updatedComments = addReplyToComment(comments);
-    setComments(updatedComments);
-    onCommentsChange?.(updatedComments);
+      if (response.data.success && response.data.comment) {
+        const reply = response.data.comment;
+
+        const addReplyToComment = (commentsList) => {
+          return commentsList.map(comment => {
+            if (comment.id === parentCommentId) {
+              return {
+                ...comment,
+                replies: [...(comment.replies || []), reply]
+              };
+            }
+            if (comment.replies?.length > 0) {
+              return {
+                ...comment,
+                replies: addReplyToComment(comment.replies)
+              };
+            }
+            return comment;
+          });
+        };
+
+        const updatedComments = addReplyToComment(comments);
+        setComments(updatedComments);
+        onCommentsChange?.(updatedComments);
+        toast.success('Reply added!');
+      }
+    } catch (error) {
+      console.error('Error adding reply:', error);
+      toast.error('Failed to add reply. Please try again.');
+    }
   };
 
   const likeComment = (commentId) => {

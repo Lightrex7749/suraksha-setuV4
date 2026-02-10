@@ -176,6 +176,7 @@ export const useWebSocket = (url, options = {}) => {
 
       wsRef.current.onerror = (error) => {
         console.error('WebSocket error:', error);
+        // Don't show error toast - will handle in onclose if needed
         if (onError) onError(error);
       };
 
@@ -190,9 +191,12 @@ export const useWebSocket = (url, options = {}) => {
         if (autoReconnect && reconnectAttempts < maxReconnectAttempts) {
           console.log(`Reconnecting in ${reconnectInterval}ms... (Attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
           
-          toast.warning('⚠️ Alert connection lost', {
-            description: `Reconnecting... (Attempt ${reconnectAttempts + 1})`,
-          });
+          // Only show toast after first failed attempt
+          if (reconnectAttempts > 0) {
+            toast.warning('⚠️ Alert connection lost', {
+              description: `Reconnecting... (Attempt ${reconnectAttempts + 1})`,
+            });
+          }
 
           reconnectTimeoutRef.current = setTimeout(() => {
             setReconnectAttempts((prev) => prev + 1);

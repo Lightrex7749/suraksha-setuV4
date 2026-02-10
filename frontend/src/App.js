@@ -4,10 +4,14 @@ import { Toaster } from "sonner";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { LocationProvider } from "@/contexts/LocationContext";
 import { ErrorBoundary } from "@/components/errors/ErrorBoundary";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import MainLayout from "@/components/layout/MainLayout";
 import PWAInstallPrompt from "@/components/pwa/PWAInstallPrompt";
 import OfflineIndicator from "@/components/pwa/OfflineIndicator";
 import Landing from "@/pages/Landing";
+import Login from "@/pages/Login";
+import Register from "@/pages/Register";
+import ForgotPassword from "@/pages/ForgotPassword";
 import Dashboard from "@/pages/Dashboard";
 import MapView from "@/pages/MapView";
 import Alerts from "@/pages/Alerts";
@@ -18,6 +22,7 @@ import Analytics from "@/pages/Analytics";
 import StudentPortal from "@/pages/StudentPortal";
 import ScientistPortal from "@/pages/ScientistPortal";
 import AdminDashboard from "@/pages/AdminDashboard";
+import CriticalContacts from "@/pages/CriticalContacts";
 
 function App() {
   return (
@@ -29,11 +34,18 @@ function App() {
           <PWAInstallPrompt />
           <BrowserRouter>
           <Routes>
-            {/* Landing Page */}
+            {/* Public Routes */}
             <Route path="/" element={<Landing />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
             
-            {/* All Routes Accessible Without Auth */}
-            <Route path="/app" element={<MainLayout />}>
+            {/* Protected Routes - Require Authentication */}
+            <Route path="/app" element={
+              <ProtectedRoute>
+                <MainLayout />
+              </ProtectedRoute>
+            }>
               <Route index element={<Navigate to="/app/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="map" element={<MapView />} />
@@ -42,17 +54,20 @@ function App() {
               <Route path="disasters" element={<Disasters />} />
               <Route path="community" element={<Community />} />
               <Route path="analytics" element={<Analytics />} />
+              <Route path="critical-contacts" element={<CriticalContacts />} />
               <Route path="student" element={<StudentPortal />} />
               <Route path="scientist" element={<ScientistPortal />} />
               <Route path="admin" element={<AdminDashboard />} />
             </Route>
 
-            {/* Redirect login/register to dashboard */}
-            <Route path="/login" element={<Navigate to="/app/dashboard" replace />} />
-            <Route path="/register" element={<Navigate to="/app/dashboard" replace />} />
+            {/* Legacy routes - redirect to new structure */}
+            <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
+            <Route path="/student" element={<Navigate to="/app/student" replace />} />
+            <Route path="/scientist" element={<Navigate to="/app/scientist" replace />} />
+            <Route path="/admin" element={<Navigate to="/app/admin" replace />} />
             
-            {/* Catch all - redirect to dashboard */}
-            <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
+            {/* Catch all - redirect to landing */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </LocationProvider>

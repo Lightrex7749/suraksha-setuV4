@@ -3,7 +3,7 @@ import {
   Plus, Filter, Search, TrendingUp, 
   Award, Heart, Users, MapPin, 
   AlertCircle, HelpCircle, Megaphone,
-  Clock, ThumbsUp as ThumbsUpIcon
+  Clock, ThumbsUp as ThumbsUpIcon, Loader2
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +21,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import CommunityPost from '@/components/community/CommunityPost';
 import CreatePostModal from '@/components/community/CreatePostModal';
+import axios from 'axios';
+import { toast } from 'sonner';
+
+const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
 
 const Community = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -30,127 +34,59 @@ const Community = () => {
   const [filterType, setFilterType] = useState('all');
   const [sortBy, setSortBy] = useState('recent');
   const [activeTab, setActiveTab] = useState('feed');
+  const [loading, setLoading] = useState(true);
 
-  // Initialize with sample posts
-  useEffect(() => {
+  // Fetch posts from backend
+  const fetchPosts = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get(`${API_URL}/community/posts`, {
+        params: {
+          type: filterType !== 'all' ? filterType : undefined,
+          limit: 50
+        }
+      });
+      setPosts(response.data.posts || []);
+      setFilteredPosts(response.data.posts || []);
+    } catch (error) {
+      console.error('Error fetching posts:', error);
+      toast.error('Failed to load community posts');
+      // Fallback to sample data on error
+      loadSampleData();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load sample data as fallback
+  const loadSampleData = () => {
     const samplePosts = [
       {
         id: '1',
         userId: 'user1',
         author: 'Rahul Sharma',
-        timestamp: new Date(Date.now() - 600000).toISOString(), // 10 mins ago
+        timestamp: new Date(Date.now() - 600000).toISOString(),
         title: 'Water Logging Alert',
-        content: 'Water logging near Sector 5 main road. Avoid this route if possible. Water level is above knee height. Several vehicles are stuck. Emergency services have been notified.',
+        content: 'Water logging near Sector 5 main road. Avoid this route if possible. Water level is above knee height.',
         type: 'alert',
         location: 'Sector 5, Bhubaneswar',
         geolocation: { latitude: 20.2961, longitude: 85.8245 },
         tags: ['flood', 'traffic', 'sector5'],
-        media: [
-          {
-            id: 'm1',
-            type: 'image/jpeg',
-            preview: 'https://images.unsplash.com/photo-1549888983-47e363b482bc?auto=format&fit=crop&q=80&w=800',
-            name: 'waterlogging.jpg',
-            size: 245000,
-            file: null,
-            geotag: { latitude: 20.2961, longitude: 85.8245, accuracy: 15 }
-          }
-        ],
+        media: [],
         likes: 24,
         likedByUser: false,
         savedByUser: false,
-        comments: [
-          {
-            id: 'c1',
-            userId: 'user2',
-            author: 'Priya Das',
-            content: 'Thanks for the update! Taking alternate route.',
-            timestamp: new Date(Date.now() - 300000).toISOString(),
-            likes: 3,
-            likedByUser: false,
-            replies: [],
-            edited: false
-          }
-        ]
-      },
-      {
-        id: '2',
-        userId: 'user3',
-        author: 'Priya Das',
-        timestamp: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-        title: 'Emergency: Fallen Tree',
-        content: 'Fallen tree blocking the entrance to the colony. Electricity wires are also down. Please send help! Situation is critical.',
-        type: 'emergency',
-        location: 'Unit 4, Cuttack',
-        geolocation: { latitude: 20.4625, longitude: 85.8830 },
-        tags: ['emergency', 'electricity', 'tree'],
-        media: [],
-        likes: 56,
-        likedByUser: false,
-        savedByUser: false,
-        comments: []
-      },
-      {
-        id: '3',
-        userId: 'user4',
-        author: 'Volunteer Group A',
-        timestamp: new Date(Date.now() - 7200000).toISOString(), // 2 hours ago
-        title: 'Food Distribution',
-        content: 'We are distributing food packets and water bottles at the Community Center. Anyone in need please come. Distribution until 8 PM.',
-        type: 'offer',
-        location: 'Community Center, Bhubaneswar',
-        geolocation: { latitude: 20.2961, longitude: 85.8245 },
-        tags: ['food', 'water', 'help', 'relief'],
-        media: [],
-        likes: 142,
-        likedByUser: true,
-        savedByUser: false,
-        comments: [
-          {
-            id: 'c2',
-            userId: 'user5',
-            author: 'Amit Kumar',
-            content: 'Great work! How can I volunteer?',
-            timestamp: new Date(Date.now() - 6000000).toISOString(),
-            likes: 5,
-            likedByUser: false,
-            replies: [
-              {
-                id: 'c2r1',
-                userId: 'user4',
-                author: 'Volunteer Group A',
-                content: 'Come to the center, we need all the help we can get!',
-                timestamp: new Date(Date.now() - 5400000).toISOString(),
-                likes: 2,
-                likedByUser: false,
-                replies: [],
-                edited: false
-              }
-            ],
-            edited: false
-          }
-        ]
-      },
-      {
-        id: '4',
-        userId: 'user6',
-        author: 'Sunita Patel',
-        timestamp: new Date(Date.now() - 14400000).toISOString(), // 4 hours ago
-        content: 'Looking for temporary shelter for my family (4 people). Our house has been flooded. Any leads would be appreciated.',
-        type: 'help',
-        location: 'Saheed Nagar, Bhubaneswar',
-        geolocation: { latitude: 20.2961, longitude: 85.8245 },
-        tags: ['shelter', 'help', 'urgent'],
-        media: [],
-        likes: 89,
-        likedByUser: false,
-        savedByUser: true,
         comments: []
       }
     ];
     setPosts(samplePosts);
     setFilteredPosts(samplePosts);
-  }, []);
+  };
+
+  // Initial fetch
+  useEffect(() => {
+    fetchPosts();
+  }, [filterType]);
 
   // Filter and search posts
   useEffect(() => {
@@ -191,29 +127,68 @@ const Community = () => {
     setFilteredPosts(filtered);
   }, [posts, filterType, searchQuery, sortBy]);
 
-  const handlePostCreated = (newPost) => {
-    setPosts([newPost, ...posts]);
+  const handlePostCreated = async (newPost) => {
+    try {
+      const response = await axios.post(`${API_URL}/community/posts`, newPost);
+      if (response.data.success && response.data.post) {
+        setPosts([response.data.post, ...posts]);
+        toast.success('Post created successfully!');
+      }
+    } catch (error) {
+      console.error('Error creating post:', error);
+      toast.error('Failed to create post. Please try again.');
+    }
   };
 
-  const handlePostLike = (postId, liked) => {
-    setPosts(posts.map(post => 
-      post.id === postId 
-        ? { ...post, likedByUser: liked, likes: liked ? post.likes + 1 : post.likes - 1 }
-        : post
-    ));
+  const handlePostLike = async (postId, liked) => {
+    try {
+      const response = await axios.post(`${API_URL}/community/posts/${postId}/like`, null, {
+        params: { unlike: !liked }
+      });
+      if (response.data.success) {
+        setPosts(posts.map(post => 
+          post.id === postId 
+            ? { ...post, likedByUser: response.data.liked, likes: response.data.likes }
+            : post
+        ));
+      }
+    } catch (error) {
+      console.error('Error liking post:', error);
+      toast.error('Failed to update like status');
+    }
   };
 
-  const handlePostSave = (postId, saved) => {
-    setPosts(posts.map(post => 
-      post.id === postId 
-        ? { ...post, savedByUser: saved }
-        : post
-    ));
+  const handlePostSave = async (postId, saved) => {
+    try {
+      const response = await axios.post(`${API_URL}/community/posts/${postId}/save`, null, {
+        params: { unsave: !saved }
+      });
+      if (response.data.success) {
+        setPosts(posts.map(post => 
+          post.id === postId 
+            ? { ...post, savedByUser: response.data.saved }
+            : post
+        ));
+        toast.success(response.data.saved ? 'Post saved!' : 'Post unsaved');
+      }
+    } catch (error) {
+      console.error('Error saving post:', error);
+      toast.error('Failed to save post');
+    }
   };
 
-  const handlePostDelete = (postId) => {
-    if (confirm('Are you sure you want to delete this post?')) {
-      setPosts(posts.filter(post => post.id !== postId));
+  const handlePostDelete = async (postId) => {
+    if (window.confirm('Are you sure you want to delete this post?')) {
+      try {
+        const response = await axios.delete(`${API_URL}/community/posts/${postId}`);
+        if (response.data.success) {
+          setPosts(posts.filter(post => post.id !== postId));
+          toast.success('Post deleted successfully');
+        }
+      } catch (error) {
+        console.error('Error deleting post:', error);
+        toast.error('Failed to delete post');
+      }
     }
   };
 
@@ -356,7 +331,14 @@ const Community = () => {
 
             {/* Feed Tab */}
             <TabsContent value="feed" className="space-y-4 mt-6">
-              {filteredPosts.length > 0 ? (
+              {loading ? (
+                <Card>
+                  <CardContent className="p-12 text-center">
+                    <Loader2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground animate-spin" />
+                    <p className="text-muted-foreground">Loading community posts...</p>
+                  </CardContent>
+                </Card>
+              ) : filteredPosts.length > 0 ? (
                 filteredPosts.map((post) => (
                   <CommunityPost
                     key={post.id}

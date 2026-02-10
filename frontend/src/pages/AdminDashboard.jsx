@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   ShieldCheck, 
   Users, 
@@ -6,7 +6,8 @@ import {
   Server, 
   Check, 
   X,
-  MoreHorizontal
+  MoreHorizontal,
+  Settings
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -19,8 +20,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import UserManagement from "@/components/admin/UserManagement";
 
 const AdminDashboard = () => {
+  const [activeTab, setActiveTab] = useState('overview');
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -30,8 +35,21 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      {/* System Health Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="overview" className="gap-2">
+            <Server className="w-4 h-4" />
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="users" className="gap-2">
+            <Users className="w-4 h-4" />
+            User Management
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-6">
+          {/* System Health Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-6 flex items-center gap-4">
             <div className="p-3 rounded-full bg-green-100 text-green-600">
@@ -177,6 +195,12 @@ const AdminDashboard = () => {
           </CardContent>
         </Card>
       </div>
+        </TabsContent>
+
+        <TabsContent value="users">
+          <UserManagement />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

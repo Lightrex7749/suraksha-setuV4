@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   BookOpen,
@@ -13,8 +13,70 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import Quiz from "@/components/student/Quiz";
 
 const StudentPortal = () => {
+  const [activeQuiz, setActiveQuiz] = useState(null);
+  const [showQuizzes, setShowQuizzes] = useState(false);
+
+  const quizCategories = [
+    {
+      id: 'earthquake',
+      title: 'Earthquake Safety',
+      description: 'Learn how to stay safe during earthquakes',
+      icon: '🌍',
+      color: 'from-red-500 to-orange-500',
+      difficulty: 'Medium',
+      questions: 5,
+      xp: 100
+    },
+    {
+      id: 'flood',
+      title: 'Flood Preparedness',
+      description: 'Master flood safety and evacuation',
+      icon: '🌊',
+      color: 'from-blue-500 to-cyan-500',
+      difficulty: 'Easy',
+      questions: 5,
+      xp: 80
+    },
+    {
+      id: 'cyclone',
+      title: 'Cyclone Safety',
+      description: 'Understand tropical cyclones and protection',
+      icon: '🌪️',
+      color: 'from-purple-500 to-indigo-500',
+      difficulty: 'Medium',
+      questions: 5,
+      xp: 100
+    },
+    {
+      id: 'fire',
+      title: 'Fire Safety',
+      description: 'Critical fire prevention and escape knowledge',
+      icon: '🔥',
+      color: 'from-orange-500 to-red-600',
+      difficulty: 'Easy',
+      questions: 5,
+      xp: 80
+    }
+  ];
+
+  if (activeQuiz) {
+    return (
+      <div className="max-w-7xl mx-auto space-y-6">
+        <Button 
+          variant="ghost" 
+          onClick={() => setActiveQuiz(null)}
+          className="mb-4"
+        >
+          ← Back to Portal
+        </Button>
+        <Quiz category={activeQuiz} />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -81,6 +143,64 @@ const StudentPortal = () => {
               <Button variant="secondary" className="gap-2">
                 <Video className="w-4 h-4" /> Enter VR Mode
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* Interactive Quizzes Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BrainCircuit className="w-6 h-6 text-purple-600" />
+                Interactive Safety Quizzes
+              </CardTitle>
+              <CardDescription>
+                Test your knowledge and earn badges! Complete quizzes to unlock achievements.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {quizCategories.map((quiz, index) => (
+                  <motion.div
+                    key={quiz.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                  >
+                    <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group" onClick={() => setActiveQuiz(quiz.id)}>
+                      <div className={`h-3 bg-gradient-to-r ${quiz.color}`}></div>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-3xl">{quiz.icon}</span>
+                            <div>
+                              <h4 className="font-semibold group-hover:text-primary transition-colors">
+                                {quiz.title}
+                              </h4>
+                              <p className="text-xs text-muted-foreground">
+                                {quiz.questions} questions · +{quiz.xp} XP
+                              </p>
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {quiz.difficulty}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-3">
+                          {quiz.description}
+                        </p>
+                        <Button 
+                          size="sm" 
+                          className="w-full gap-2 group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
+                          variant="outline"
+                        >
+                          <Gamepad2 className="w-4 h-4" />
+                          Start Quiz
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </div>

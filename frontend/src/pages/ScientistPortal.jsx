@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from 'sonner';
+import DataExport from "@/components/scientist/DataExport";
 
 const ScientistPortal = () => {
   const [uploadingData, setUploadingData] = useState(false);
@@ -214,6 +215,7 @@ const ScientistPortal = () => {
           <TabsTrigger value="models">Predictive Models</TabsTrigger>
           <TabsTrigger value="simulation">Raw Simulation</TabsTrigger>
           <TabsTrigger value="reports">Research Reports</TabsTrigger>
+          <TabsTrigger value="export">Data Export</TabsTrigger>
         </TabsList>
 
         <TabsContent value="analysis" className="space-y-6">
@@ -525,6 +527,10 @@ const ScientistPortal = () => {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="export">
+          <DataExport />
         </TabsContent>
       </Tabs>
     </div>

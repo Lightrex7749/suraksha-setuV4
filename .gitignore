@@ -41,3 +41,13 @@ coverage/
 *.tar.gz
 encoded.txt
 main/
+
+# Firebase
+.firebase/
+.firebaserc
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+functions/node_modules/
+backend/serviceAccountKey.json
+backend/firebase-adminsdk-*.json
