@@ -3704,7 +3704,7 @@ async def transcribe_voice(audio_file: UploadFile = File(...)):
 
 @api_router.post("/voice/chat")
 async def voice_chat(audio_file: UploadFile = File(...)):
-    """Complete voice interaction: transcribe audio, get AI response, return both text and voice-optimized response"""
+    """Complete voice interaction: transcribe audio with language detection, get AI response in same language"""
     if not bytez_model:
         raise HTTPException(
             status_code=503,
@@ -3712,7 +3712,7 @@ async def voice_chat(audio_file: UploadFile = File(...)):
         )
     
     try:
-        # Step 1: Transcribe audio to text
+        # Step 1: Transcribe audio to text with language detection
         temp_audio_path = f"/tmp/audio_{uuid.uuid4()}.{audio_file.filename.split('.')[-1]}"
         with open(temp_audio_path, "wb") as f:
             content = await audio_file.read()
@@ -3726,17 +3726,37 @@ async def voice_chat(audio_file: UploadFile = File(...)):
         
         user_message = results.output
         
-        # Step 2: Get AI response using simple_chat logic
+        # Step 2: Detect language from transcribed text
+        detected_language = await detect_language(user_message)
+        logging.info(f"Detected language: {detected_language}")
+        
+        # Step 3: Get disaster context
         disaster_context = await get_disaster_context()
         
-        system_message = f"""You are Suraksha AI. Answer conversationally and concisely (2-3 sentences max for voice).
+        # Step 4: Build language-aware system message
+        language_instructions = {
+            'hi': 'You are Suraksha AI. ALWAYS respond in Hindi (Devanagari script). Keep responses SHORT (2-3 sentences) for voice.',
+            'bn': 'You are Suraksha AI. ALWAYS respond in Bengali (Bengali script). Keep responses SHORT (2-3 sentences) for voice.',
+            'te': 'You are Suraksha AI. ALWAYS respond in Telugu. Keep responses SHORT (2-3 sentences) for voice.',
+            'ta': 'You are Suraksha AI. ALWAYS respond in Tamil. Keep responses SHORT (2-3 sentences) for voice.',
+            'mr': 'You are Suraksha AI. ALWAYS respond in Marathi. Keep responses SHORT (2-3 sentences) for voice.',
+            'gu': 'You are Suraksha AI. ALWAYS respond in Gujarati. Keep responses SHORT (2-3 sentences) for voice.',
+            'kn': 'You are Suraksha AI. ALWAYS respond in Kannada. Keep responses SHORT (2-3 sentences) for voice.',
+            'ml': 'You are Suraksha AI. ALWAYS respond in Malayalam. Keep responses SHORT (2-3 sentences) for voice.',
+            'pa': 'You are Suraksha AI. ALWAYS respond in Punjabi. Keep responses SHORT (2-3 sentences) for voice.',
+            'default': 'You are Suraksha AI. Answer conversationally and concisely (2-3 sentences max for voice).'
+        }
+        
+        base_instruction = language_instructions.get(detected_language, language_instructions['default'])
+        
+        system_message = f"""{base_instruction}
 
 Current Status:
 • Weather: {disaster_context.get('current_weather', {}).get('temperature', 'N/A')}°C
 • AQI: {disaster_context.get('air_quality', {}).get('aqi', 'N/A')}
-• Alerts: {disaster_context.get('alert_count', 0)}
+• Alerts: {disaster_context.get('alert_count', 0)} active
 
-Keep responses SHORT for voice playback."""
+Be conversational and helpful. For safety questions, provide actionable advice."""
 
         response_text = None
         
@@ -3744,13 +3764,13 @@ Keep responses SHORT for voice playback."""
         if openai_client:
             try:
                 completion = await openai_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4o-mini",  # Better multilingual support
                     messages=[
                         {"role": "system", "content": system_message},
                         {"role": "user", "content": user_message}
                     ],
-                    max_tokens=150,  # Shorter for voice
-                    temperature=0.7
+                    max_tokens=200,  # Slightly longer for natural conversation
+                    temperature=0.8
                 )
                 response_text = completion.choices[0].message.content
             except Exception as e:
@@ -3772,12 +3792,84 @@ Keep responses SHORT for voice playback."""
             "success": True,
             "transcription": user_message,
             "response": response_text,
+            "detected_language": detected_language,
+            "language_code": get_speech_language_code(detected_language),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
     except Exception as e:
         logging.error(f"Voice chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Voice chat failed: {str(e)}")
+
+
+# Helper function for language detection
+async def detect_language(text: str) -> str:
+    """Detect language from text using simple heuristics"""
+    # Simple language detection based on character sets and common words
+    text_lower = text.lower()
+    
+    # Hindi detection (Devanagari script)
+    if any('\u0900' <= char <= '\u097F' for char in text):
+        return 'hi'
+    
+    # Bengali
+    if any('\u0980' <= char <= '\u09FF' for char in text):
+        return 'bn'
+    
+    # Telugu
+    if any('\u0C00' <= char <= '\u0C7F' for char in text):
+        return 'te'
+    
+    # Tamil
+    if any('\u0B80' <= char <= '\u0BFF' for char in text):
+        return 'ta'
+    
+    # Marathi (uses Devanagari, check for specific Marathi words)
+    marathi_words = ['काय', 'आहे', 'मला', 'तुम्ही', 'मी']
+    if any(word in text for word in marathi_words):
+        return 'mr'
+    
+    # Gujarati
+    if any('\u0A80' <= char <= '\u0AFF' for char in text):
+        return 'gu'
+    
+    # Kannada
+    if any('\u0C80' <= char <= '\u0CFF' for char in text):
+        return 'kn'
+    
+    # Malayalam
+    if any('\u0D00' <= char <= '\u0D7F' for char in text):
+        return 'ml'
+    
+    # Punjabi
+    if any('\u0A00' <= char <= '\u0A7F' for char in text):
+        return 'pa'
+    
+    # Common Hindi words (if using Latin script)
+    hindi_words = ['kya', 'hai', 'hain', 'mujhe', 'aap', 'main', 'namaste']
+    if any(word in text_lower for word in hindi_words):
+        return 'hi'
+    
+    # Default to English
+    return 'en'
+
+
+def get_speech_language_code(lang: str) -> str:
+    """Convert detected language to speech synthesis language code"""
+    language_map = {
+        'hi': 'hi-IN',  # Hindi (India)
+        'bn': 'bn-IN',  # Bengali (India)
+        'te': 'te-IN',  # Telugu (India)
+        'ta': 'ta-IN',  # Tamil (India)
+        'mr': 'mr-IN',  # Marathi (India)
+        'gu': 'gu-IN',  # Gujarati (India)
+        'kn': 'kn-IN',  # Kannada (India)
+        'ml': 'ml-IN',  # Malayalam (India)
+        'pa': 'pa-IN',  # Punjabi (India)
+        'en': 'en-IN',  # English (India)
+    }
+    return language_map.get(lang, 'en-IN')
+
 
 # ==================== EXISTING ENDPOINTS CONTINUE ====================
         logging.error(f"Error getting suggestions: {str(e)}")

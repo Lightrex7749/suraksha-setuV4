@@ -19,7 +19,7 @@ const EnhancedAIChatInterface = () => {
     {
       id: 1,
       type: 'bot',
-      text: '👋 **Namaste!** I\'m Suraksha AI, your intelligent disaster safety assistant powered by ChatGPT.\n\n🔹 **Real-time weather** & **air quality** updates\n🔹 **Emergency preparedness** & safety tips\n🔹 **Live disaster alerts** in your area\n🔹 **Safety guidance** for natural disasters\n\nHow can I help you stay safe today?',
+      text: '👋 **Namaste!** I\'m Suraksha AI, your intelligent disaster safety assistant powered by ChatGPT.\n\n🔹 **Real-time weather** & **air quality** updates\n🔹 **Emergency preparedness** & safety tips\n🔹 **Live disaster alerts** in your area\n🔹 **Safety guidance** for natural disasters\n\n🎤 **Voice Mode:** Click the voice button for hands-free conversation in ANY language!\n\nHow can I help you stay safe today?',
       timestamp: new Date(),
     },
   ]);
@@ -28,6 +28,8 @@ const EnhancedAIChatInterface = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false); // NEW: Voice conversation mode
+  const [detectedLanguage, setDetectedLanguage] = useState('en-IN'); // NEW: Auto-detected language
   const [mediaRecorder, setMediaRecorder] = useState(null);
   const [audioChunks, setAudioChunks] = useState([]);
   const scrollAreaRef = useRef(null);
@@ -47,6 +49,23 @@ const EnhancedAIChatInterface = () => {
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
+    }
+  }, []);
+
+  // Load voices for better language support
+  useEffect(() => {
+    if ('speechSynthesis' in window) {
+      // Load voices
+      const loadVoices = () => {
+        const voices = window.speechSynthesis.getVoices();
+        console.log(`Loaded ${voices.length} voices for TTS`);
+      };
+      
+      // Chrome loads voices asynchronously
+      if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+      }
+      loadVoices();
     }
   }, []);
 
@@ -191,30 +210,68 @@ const EnhancedAIChatInterface = () => {
     }
   };
 
-  // Text-to-Speech
-  const speakText = (text) => {
-    if (!('speechSynthesis' in window)) return;
+  // Text-to-Speech with language support
+  const speakText = (text, languageCode = null) => {
+    if (!('speechSynthesis' in window)) {
+      console.warn('Speech synthesis not supported');
+      return Promise.resolve();
+    }
 
-    // Stop any ongoing speech
-    window.speechSynthesis.cancel();
+    return new Promise((resolve) => {
+      // Stop any ongoing speech
+      window.speechSynthesis.cancel();
 
-    // Clean text for speech
-    const cleanText = text
-      .replace(/\*\*/g, '')  // Remove bold markers
-      .replace(/[•\-]/g, '')  // Remove bullet points
-      .replace(/\n/g, '. ')   // Replace newlines with periods
-      .substring(0, 500);     // Limit length
+      // Clean text for speech
+      const cleanText = text
+        .replace(/\*\*/g, '')  // Remove bold markers
+        .replace(/[•\-]/g, '')  // Remove bullet points
+        .replace(/\n/g, '. ')   // Replace newlines with periods
+        .replace(/#+/g, '')     // Remove markdown headers
+        .substring(0, 500);     // Limit length
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = 'en-IN';
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      
+      // Use detected language or default to Indian English
+      const lang = languageCode || detectedLanguage || 'en-IN';
+      utterance.lang = lang;
+      
+      // Adjust speech parameters for better naturalness
+      utterance.rate = 0.95;   // Slightly slower for clarity
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      
+      // Try to select best voice for the language
+      const voices = window.speechSynthesis.getVoices();
+      const preferredVoice = voices.find(voice => 
+        voice.lang.startsWith(lang.split('-')[0]) && 
+        (voice.lang.includes('IN') || voice.name.includes('India'))
+      );
+      
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+        console.log(`Using voice: ${preferredVoice.name} (${preferredVoice.lang})`);
+      } else {
+        console.log(`Using default voice for ${lang}`);
+      }
+      
+      utterance.onstart = () => {
+        setIsSpeaking(true);
+        console.log(`Speaking in ${lang}...`);
+      };
+      
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        resolve();
+      };
+      
+      utterance.onerror = (error) => {
+        console.error('Speech synthesis error:', error);
+        setIsSpeaking(false);
+        resolve();
+      };
 
-    window.speechSynthesis.speak(utterance);
+      window.speechSynthesis.speak(utterance);
+    });
   };
 
   const stopSpeaking = () => {
@@ -342,6 +399,29 @@ const EnhancedAIChatInterface = () => {
             </div>
           </div>
           <div className="flex gap-1">
+            {/* Voice Mode Toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setVoiceMode(!voiceMode);
+                if (!voiceMode) {
+                  toast.success('🎤 Voice Mode ON - Continuous conversation enabled!');
+                } else {
+                  toast.info('Voice Mode OFF');
+                  // Stop recording if active
+                  if (isRecording) stopRecording();
+                }
+              }}
+              className={`h-8 w-8 rounded-lg transition-all ${
+                voiceMode 
+                  ? 'bg-green-500/30 text-white hover:bg-green-500/40 ring-2 ring-green-400/50 animate-pulse' 
+                  : 'text-white hover:bg-white/20'
+              }`}
+              title={voiceMode ? "Voice Mode: ON" : "Voice Mode: OFF"}
+            >
+              <Volume2 className="h-4 w-4" />
+            </Button>
             {isSpeaking && (
               <Button
                 variant="ghost"
@@ -453,13 +533,19 @@ const EnhancedAIChatInterface = () => {
                 onClick={isRecording ? stopRecording : startRecording}
                 disabled={isLoading}
                 size="icon"
-                className={`h-12 w-12 rounded-xl shadow-md transition-all ${
+                className={`h-12 w-12 rounded-xl shadow-md transition-all relative ${
                   isRecording 
                     ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
+                    : voiceMode
+                    ? 'bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 ring-2 ring-green-400/50'
                     : 'bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
                 }`}
+                title={voiceMode ? "Voice Mode: Continuous Conversation" : "Voice Input"}
               >
                 {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                {voiceMode && !isRecording && (
+                  <span className="absolute -top-1 -right-1 h-3 w-3 bg-green-400 rounded-full border-2 border-white animate-pulse"></span>
+                )}
               </Button>
               <Button
                 onClick={handleSendMessage}
@@ -476,10 +562,25 @@ const EnhancedAIChatInterface = () => {
             </div>
           </div>
           
-          {/* Helper Text */}
-          <p className="text-[10px] text-muted-foreground mt-2 text-center">
-            Powered by ChatGPT & Whisper • Press Enter to send
-          </p>
+          {/* Helper Text with Voice Mode Status */}
+          <div className="flex items-center justify-between mt-2">
+            <p className="text-[10px] text-muted-foreground">
+              {voiceMode ? (
+                <span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-semibold">
+                  <Volume2 className="h-3 w-3 animate-pulse" />
+                  Voice Mode Active • Language: {detectedLanguage}
+                </span>
+              ) : (
+                <span>Powered by ChatGPT & Whisper • Press Enter to send</span>
+              )}
+            </p>
+            {voiceMode && (
+              <Badge variant="secondary" className="text-[10px] px-2 py-0.5 h-5 bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30">
+                <Mic className="h-2.5 w-2.5 mr-1" />
+                Continuous
+              </Badge>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
