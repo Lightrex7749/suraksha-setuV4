@@ -6,29 +6,74 @@ services:
     region: oregon
     plan: free
     branch: main
-    buildCommand: cd backend && pip install -r requirements.txt
-    startCommand: cd backend && uvicorn server:app --host 0.0.0.0 --port $PORT
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
     envVars:
-      - key: MONGO_URL
-        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: databse_0f95
+          property: connectionString
+      - key: POSTGRES_URL
+        fromDatabase:
+          name: databse_0f95
+          property: connectionString
       - key: DB_NAME
+        value: suraksha_setu
+      - key: OPENAI_API_KEY
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: JWT_SECRET
+      - key: OPENWEATHER_API_KEY
         sync: false
+      - key: WAQI_API_KEY
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "10080"
+      - key: FIREBASE_PROJECT_ID
+        value: surakhsa-setu
+      - key: PORT
+        value: "8000"
       - key: CORS_ORIGINS
         value: "*"
+      - key: ENABLE_AI_INSIGHTS
+        value: "true"
+      - key: ENABLE_REAL_TIME_DATA
+        value: "true"
 
-  # Frontend Service
+  # Frontend Service (Static Site)
   - type: web
     name: suraksha-setu-frontend
-    env: node
+    env: static
     region: oregon
     plan: free
     branch: main
-    buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: ./frontend/build
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./build
     envVars:
       - key: REACT_APP_BACKEND_URL
+        fromService:
+          type: web
+          name: suraksha-setu-backend
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: REACT_APP_FIREBASE_API_KEY
         sync: false
+      - key: REACT_APP_FIREBASE_AUTH_DOMAIN
+        value: surakhsa-setu.firebaseapp.com
+      - key: REACT_APP_FIREBASE_PROJECT_ID
+        value: surakhsa-setu
+      - key: REACT_APP_FIREBASE_STORAGE_BUCKET
+        value: surakhsa-setu.firebasestorage.app
+      - key: REACT_APP_FIREBASE_MESSAGING_SENDER_ID
+        sync: false
+      - key: REACT_APP_FIREBASE_APP_ID
+        sync: false
+      - key: REACT_APP_ENABLE_SERVICE_WORKER
+        value: "true"
+      - key: GENERATE_SOURCEMAP
+        value: "false"
