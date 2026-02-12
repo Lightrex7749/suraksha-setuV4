@@ -187,21 +187,27 @@ export const useWebSocket = (url, options = {}) => {
 
         if (onDisconnect) onDisconnect();
 
-        // Attempt reconnection
+        // Attempt reconnection with exponential backoff
         if (autoReconnect && reconnectAttempts < maxReconnectAttempts) {
-          console.log(`Reconnecting in ${reconnectInterval}ms... (Attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
-          
+          // Exponential backoff: 3s, 6s, 12s, 24s, 48s (max 30s)
+          const backoffDelay = Math.min(
+            reconnectInterval * Math.pow(2, reconnectAttempts),
+            30000
+          );
+
+          console.log(`Reconnecting in ${backoffDelay}ms... (Attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+
           // Only show toast after first failed attempt
           if (reconnectAttempts > 0) {
             toast.warning('⚠️ Alert connection lost', {
-              description: `Reconnecting... (Attempt ${reconnectAttempts + 1})`,
+              description: `Reconnecting in ${Math.round(backoffDelay / 1000)}s... (Attempt ${reconnectAttempts + 1})`,
             });
           }
 
           reconnectTimeoutRef.current = setTimeout(() => {
             setReconnectAttempts((prev) => prev + 1);
             connect();
-          }, reconnectInterval);
+          }, backoffDelay);
         } else if (reconnectAttempts >= maxReconnectAttempts) {
           toast.error('❌ Could not connect to alert service', {
             description: 'Please refresh the page to try again',

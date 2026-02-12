@@ -18,7 +18,7 @@ DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
 if DATABASE_URL:
     if DATABASE_URL.startswith('sqlite'):
         # SQLite for local development
-        print("🔧 Using SQLite for local development")
+        print("[DB] Using SQLite for local development")
         engine = create_async_engine(
             DATABASE_URL,
             echo=False,
@@ -212,10 +212,10 @@ async def init_db():
     async with engine.begin() as conn:
         # Create all tables
         await conn.run_sync(Base.metadata.create_all)
-        print("✅ Database tables created successfully")
+        print("[DB] Database tables created successfully")
 
 
 async def close_db():
     """Close database connections"""
     await engine.dispose()
-    print("✅ Database connections closed")
+    print("[DB] Database connections closed")

@@ -4,8 +4,8 @@ import { onAuthStateChanged } from 'firebase/auth';
 
 const AuthContext = createContext(null);
 
-// 🔧 DEVELOPMENT MODE - Set to true to bypass Firebase authentication
-const DEV_MODE = true; // Change to false when Firebase is configured
+// 🔧 TEMPORARY DEV MODE - Re-enabled until Firebase is configured
+const DEV_MODE = true; // Set to false once Firebase credentials are added
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -25,11 +25,11 @@ export const AuthProvider = ({ children }) => {
     // 🔧 DEVELOPMENT MODE BYPASS
     if (DEV_MODE) {
       console.log('🔧 DEV MODE: Using mock authentication');
-      
+
       // Check if user already exists in localStorage
       const storedUser = localStorage.getItem('auth_user');
       const storedToken = localStorage.getItem('auth_token');
-      
+
       if (storedUser && storedToken) {
         try {
           const parsedUser = JSON.parse(storedUser);
@@ -42,7 +42,7 @@ export const AuthProvider = ({ children }) => {
           console.error('Failed to parse stored user', e);
         }
       }
-      
+
       // No stored user, don't auto-login
       setUser(null);
       setToken(null);
@@ -55,7 +55,7 @@ export const AuthProvider = ({ children }) => {
       if (firebaseUser) {
         // User is signed in
         const idToken = await firebaseUser.getIdToken();
-        
+
         const userData = {
           id: firebaseUser.uid,
           email: firebaseUser.email,
@@ -64,10 +64,10 @@ export const AuthProvider = ({ children }) => {
           role: 'citizen', // Default role, can be updated from backend
           emailVerified: firebaseUser.emailVerified
         };
-        
+
         setUser(userData);
         setToken(idToken);
-        
+
         // Store in localStorage for persistence
         localStorage.setItem('auth_token', idToken);
         localStorage.setItem('auth_user', JSON.stringify(userData));
@@ -91,7 +91,7 @@ export const AuthProvider = ({ children }) => {
       // Check if user exists in localStorage from previous registration
       const storedUser = localStorage.getItem('auth_user');
       let mockUser;
-      
+
       if (storedUser) {
         try {
           mockUser = JSON.parse(storedUser);
@@ -119,7 +119,7 @@ export const AuthProvider = ({ children }) => {
         };
         console.log('🔧 DEV MODE: Mock login for', email, '(new user)');
       }
-      
+
       setUser(mockUser);
       const token = 'dev_token_' + Date.now();
       setToken(token);
@@ -134,7 +134,7 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       const firebaseUser = await loginWithEmail(email, password);
       const idToken = await firebaseUser.getIdToken();
-      
+
       const userData = {
         id: firebaseUser.uid,
         email: firebaseUser.email,
@@ -142,7 +142,7 @@ export const AuthProvider = ({ children }) => {
         photoURL: firebaseUser.photoURL,
         role: 'citizen'
       };
-      
+
       setUser(userData);
       setToken(idToken);
       return userData;
@@ -179,7 +179,7 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       const firebaseUser = await registerWithEmail(email, password, displayName);
       const idToken = await firebaseUser.getIdToken();
-      
+
       const userData = {
         id: firebaseUser.uid,
         email: firebaseUser.email,
@@ -187,7 +187,7 @@ export const AuthProvider = ({ children }) => {
         photoURL: firebaseUser.photoURL,
         role: role
       };
-      
+
       setUser(userData);
       setToken(idToken);
       localStorage.setItem('auth_user', JSON.stringify(userData));
@@ -224,7 +224,7 @@ export const AuthProvider = ({ children }) => {
       setLoading(true);
       const firebaseUser = await loginWithGoogle();
       const idToken = await firebaseUser.getIdToken();
-      
+
       const userData = {
         id: firebaseUser.uid,
         email: firebaseUser.email,
@@ -232,7 +232,7 @@ export const AuthProvider = ({ children }) => {
         photoURL: firebaseUser.photoURL,
         role: 'citizen'
       };
-      
+
       setUser(userData);
       setToken(idToken);
       return userData;

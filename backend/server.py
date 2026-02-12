@@ -35,6 +35,16 @@ from database import (
 # Import translation service
 from translation_service import translate_response, SUPPORTED_LANGUAGES, get_translation_service
 
+# Import MOSDAC service and data transformers
+from mosdac_service import get_mosdac_service
+from data_transformers import (
+    transform_cyclone_data,
+    transform_flood_data,
+    transform_weather_data,
+    merge_with_existing_disasters,
+    create_alert_from_disaster
+)
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -2768,123 +2778,140 @@ async def get_push_subscription_stats():
 
 @api_router.get("/disasters")
 async def get_disasters(disaster_type: Optional[str] = None, limit: int = Query(default=50, le=100)):
-    """Get historical disaster data with real statistics"""
+    """Get historical disaster data with MOSDAC real-time satellite data"""
     try:
         disasters = []
         
-        # Indian disaster data (historical + current)
-        disaster_types = {
-            "cyclone": {
-                "name": "Cyclones",
-                "recent_events": [
-                    {
-                        "id": "cyclone_001",
-                        "name": "Cyclone Amphan (2020)",
-                        "date": "2020-05-20",
-                        "location": "West Bengal, Odisha",
-                        "severity": "extremely_severe",
-                        "casualties": 26,
-                        "affected_population": 11000000,
-                        "damage": "$13.2 billion",
-                        "description": "Extremely severe cyclonic storm affecting Eastern India"
-                    },
-                    {
-                        "id": "cyclone_002",
-                        "name": "Cyclone Yaas (2021)",
-                        "date": "2021-05-26",
-                        "location": "Odisha, West Bengal",
-                        "severity": "very_severe",
-                        "casualties": 18,
-                        "affected_population": 3000000,
-                        "damage": "$2.4 billion",
-                        "description": "Very severe cyclonic storm causing flooding and landslides"
-                    }
-                ]
-            },
-            "flood": {
-                "name": "Floods",
-                "recent_events": [
-                    {
-                        "id": "flood_001",
-                        "name": "Kerala Floods 2023",
-                        "date": "2023-07-15",
-                        "location": "Kerala",
-                        "severity": "high",
-                        "casualties": 45,
-                        "affected_population": 1200000,
-                        "damage": "$2.8 billion",
-                        "description": "Severe flooding in Kerala due to heavy monsoon rains"
-                    },
-                    {
-                        "id": "flood_002",
-                        "name": "Punjab-Haryana Floods 2023",
-                        "date": "2023-08-22",
-                        "location": "Punjab, Haryana",
-                        "severity": "moderate",
-                        "casualties": 12,
-                        "affected_population": 500000,
-                        "damage": "$1.2 billion",
-                        "description": "Flash floods affecting agricultural regions"
-                    }
-                ]
-            },
-            "earthquake": {
-                "name": "Earthquakes",
-                "recent_events": [
-                    {
-                        "id": "earthquake_001",
-                        "name": "Manipur Earthquake 2023",
-                        "date": "2023-04-14",
-                        "location": "Manipur",
-                        "severity": "severe",
-                        "magnitude": 6.4,
-                        "casualties": 127,
-                        "affected_population": 500000,
-                        "damage": "$3.2 billion",
-                        "description": "Magnitude 6.4 earthquake causing widespread damage"
-                    }
-                ]
-            },
-            "drought": {
-                "name": "Droughts",
-                "recent_events": [
-                    {
-                        "id": "drought_001",
-                        "name": "Maharashtra Drought 2022-23",
-                        "date": "2022-06-01",
-                        "location": "Maharashtra",
-                        "severity": "moderate",
-                        "casualties": 0,
-                        "affected_population": 30000000,
-                        "damage": "$5.5 billion",
-                        "description": "Extended drought affecting agricultural productivity"
-                    }
-                ]
-            },
-            "landslide": {
-                "name": "Landslides",
-                "recent_events": [
-                    {
-                        "id": "landslide_001",
-                        "name": "Himachal Landslides 2023",
-                        "date": "2023-08-02",
-                        "location": "Himachal Pradesh",
-                        "severity": "high",
-                        "casualties": 38,
-                        "affected_population": 200000,
-                        "damage": "$1.8 billion",
-                        "description": "Multiple landslides triggered by heavy rainfall"
-                    }
-                ]
-            }
-        }
+        # ========== MOSDAC REAL-TIME DATA ==========
+        mosdac_disasters = []
+        try:
+            mosdac_service = get_mosdac_service()
+            
+            # Fetch cyclone data from MOSDAC
+            logging.info("Fetching cyclone data from MOSDAC...")
+            cyclone_entries = await mosdac_service.get_cyclone_data(days_back=14)
+            cyclone_disasters = transform_cyclone_data(cyclone_entries)
+            mosdac_disasters.extend(cyclone_disasters)
+            logging.info(f"✓ Fetched {len(cyclone_disasters)} cyclone disasters from MOSDAC")
+            
+            # Fetch flood data from MOSDAC
+            logging.info("Fetching flood data from MOSDAC...")
+            flood_entries = await mosdac_service.get_flood_data(days_back=14)
+            flood_disasters = transform_flood_data(flood_entries)
+            mosdac_disasters.extend(flood_disasters)
+            logging.info(f"✓ Fetched {len(flood_disasters)} flood disasters from MOSDAC")
+            
+        except Exception as e:
+            logging.warning(f"MOSDAC API unavailable: {str(e)}, using historical data only")
         
-        # Generate disasters
-        for dtype, data in disaster_types.items():
-            for event in data["recent_events"]:
-                event["type"] = dtype
-                event["category"] = data["name"]
-                disasters.append(event)
+        # ========== HISTORICAL DISASTER DATA (BASELINE) ==========
+        # Keep important historical disasters as baseline
+        historical_disasters = [
+            {
+                "id": "cyclone_amphan_2020",
+                "type": "cyclone",
+                "title": "Cyclone Amphan (2020)",
+                "date": "2020-05-20",
+                "location": "West Bengal, Odisha",
+                "severity": "extreme",
+                "status": "past",
+                "casualties": 26,
+                "affected_population": 11000000,
+                "damage": "$13.2 billion",
+                "description": "Extremely severe cyclonic storm affecting Eastern India",
+                "source": "Historical Record"
+            },
+            {
+                "id": "cyclone_yaas_2021",
+                "type": "cyclone",
+                "title": "Cyclone Yaas (2021)",
+                "date": "2021-05-26",
+                "location": "Odisha, West Bengal",
+                "severity": "high",
+                "status": "past",
+                "casualties": 18,
+                "affected_population": 3000000,
+                "damage": "$2.4 billion",
+                "description": "Very severe cyclonic storm causing flooding and landslides",
+                "source": "Historical Record"
+            },
+            {
+                "id": "flood_kerala_2023",
+                "type": "flood",
+                "title": "Kerala Floods 2023",
+                "date": "2023-07-15",
+                "location": "Kerala",
+                "severity": "high",
+                "status": "past",
+                "casualties": 45,
+                "affected_population": 1200000,
+                "damage": "$2.8 billion",
+                "description": "Severe flooding in Kerala due to heavy monsoon rains",
+                "source": "Historical Record"
+            },
+            {
+                "id": "flood_punjab_2023",
+                "type": "flood",
+                "title": "Punjab-Haryana Floods 2023",
+                "date": "2023-08-22",
+                "location": "Punjab, Haryana",
+                "severity": "medium",
+                "status": "past",
+                "casualties": 12,
+                "affected_population": 500000,
+                "damage": "$1.2 billion",
+                "description": "Flash floods affecting agricultural regions",
+                "source": "Historical Record"
+            },
+            {
+                "id": "earthquake_manipur_2023",
+                "type": "earthquake",
+                "title": "Manipur Earthquake 2023",
+                "date": "2023-04-14",
+                "location": "Manipur",
+                "severity": "severe",
+                "status": "past",
+                "magnitude": 6.4,
+                "casualties": 127,
+                "affected_population": 500000,
+                "damage": "$3.2 billion",
+                "description": "Magnitude 6.4 earthquake causing widespread damage",
+                "source": "Historical Record"
+            },
+            {
+                "id": "drought_maharashtra_2022",
+                "type": "drought",
+                "title": "Maharashtra Drought 2022-23",
+                "date": "2022-06-01",
+                "location": "Maharashtra",
+                "severity": "medium",
+                "status": "past",
+                "casualties": 0,
+                "affected_population": 30000000,
+                "damage": "$5.5 billion",
+                "description": "Extended drought affecting agricultural productivity",
+                "source": "Historical Record"
+            },
+            {
+                "id": "landslide_himachal_2023",
+                "type": "landslide",
+                "title": "Himachal Landslides 2023",
+                "date": "2023-08-02",
+                "location": "Himachal Pradesh",
+                "severity": "high",
+                "status": "past",
+                "casualties": 38,
+                "affected_population": 200000,
+                "damage": "$1.8 billion",
+                "description": "Multiple landslides triggered by heavy rainfall",
+                "source": "Historical Record"
+            }
+        ]
+        
+        # ========== MERGE MOSDAC + HISTORICAL DATA ==========
+        disasters = merge_with_existing_disasters(mosdac_disasters, historical_disasters)
+        
+        logging.info(f"Total disasters: {len(disasters)} ({len(mosdac_disasters)} from MOSDAC, {len(historical_disasters)} historical)")
         
         # Filter by type if provided
         if disaster_type:
