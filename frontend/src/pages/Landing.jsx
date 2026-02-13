@@ -442,7 +442,7 @@ const Landing = () => {
               </span>
             </h2>
             <p className="text-muted-foreground text-lg mb-8 max-w-2xl mx-auto">
-              Join thousands of Indians using Suraksha Setu for real-time disaster alerts, safety intelligence, 
+              Use Suraksha Setu for real-time disaster alerts, safety intelligence, 
               and actionable insights in your own language.
             </p>
             <div className="flex gap-4 justify-center flex-wrap">
