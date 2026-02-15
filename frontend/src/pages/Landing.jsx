@@ -146,7 +146,7 @@ const Landing = () => {
 
           <div className="grid md:grid-cols-3 gap-8">
             <motion.div {...fadeInUp} transition={{ delay: 0.1 }}>
-              <Card className="border-2 h-full hover:shadow-xl transition-shadow bg-gradient-to-br from-red-50to-orange-50 dark:from-red-950 dark:to-orange-950">
+              <Card className="border-2 h-full hover:shadow-xl transition-shadow bg-gradient-to-br from-red-50 to-orange-50 dark:from-red-950 dark:to-orange-950">
                 <CardHeader>
                   <div className="w-14 h-14 rounded-xl bg-red-500/10 flex items-center justify-center mb-4">
                     <Users className="w-8 h-8 text-red-600 dark:text-red-400" />
@@ -440,7 +440,7 @@ const Landing = () => {
               </span>
             </h2>
             <p className="text-muted-foreground text-lg mb-8 max-w-2xl mx-auto">
-              Join thousands of Indians using Suraksha Setu for real-time disaster alerts, safety intelligence, 
+              Use Suraksha Setu for real-time disaster alerts, safety intelligence, 
               and actionable insights in your own language.
             </p>
             <div className="flex gap-4 justify-center flex-wrap">
