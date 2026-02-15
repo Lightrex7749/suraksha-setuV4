@@ -4,6 +4,7 @@ PostgreSQL Database Configuration and Models
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
 from sqlalchemy import String, DateTime, JSON, Boolean, Integer, Float, Text, ForeignKey
+from geoalchemy2 import Geography
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 import os
@@ -81,6 +82,7 @@ class User(Base):
     full_name: Mapped[Optional[str]] = mapped_column(String(255))
     user_type: Mapped[str] = mapped_column(String(50))  # student, scientist, admin, citizen
     location: Mapped[Optional[Dict]] = mapped_column(JSON)
+    geom: Mapped[Any] = mapped_column(Geography(geometry_type='POINT', srid=4326), nullable=True)
     preferences: Mapped[Optional[Dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -111,11 +113,15 @@ class Alert(Base):
     title: Mapped[str] = mapped_column(String(500))
     description: Mapped[str] = mapped_column(Text)
     location: Mapped[Dict] = mapped_column(JSON)  # {lat, lon, city, state, pin_codes}
+    geom: Mapped[Any] = mapped_column(Geography(geometry_type='POINT', srid=4326), nullable=True)
     alert_metadata: Mapped[Optional[Dict]] = mapped_column(JSON)
     source: Mapped[str] = mapped_column(String(100))  # IMD, ISRO, CPCB, etc.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    retracted: Mapped[bool] = mapped_column(Boolean, default=False)
+    retraction_reason: Mapped[Optional[str]] = mapped_column(Text)
+    retracted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class CommunityReport(Base):
@@ -128,6 +134,7 @@ class CommunityReport(Base):
     title: Mapped[str] = mapped_column(String(500))
     description: Mapped[str] = mapped_column(Text)
     location: Mapped[Dict] = mapped_column(JSON)
+    geom: Mapped[Any] = mapped_column(Geography(geometry_type='POINT', srid=4326), nullable=True)
     media_urls: Mapped[Optional[list]] = mapped_column(JSON)
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     upvotes: Mapped[int] = mapped_column(Integer, default=0)
@@ -145,6 +152,7 @@ class StatusCheck(Base):
     status: Mapped[str] = mapped_column(String(20))  # safe, help_needed, emergency
     message: Mapped[Optional[str]] = mapped_column(Text)
     location: Mapped[Dict] = mapped_column(JSON)
+    geom: Mapped[Any] = mapped_column(Geography(geometry_type='POINT', srid=4326), nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
 
@@ -179,6 +187,36 @@ class CommunityPost(Base):
     is_public: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class MOSDACMetadata(Base):
+    """MOSDAC Product Metadata (Layer 1)"""
+    __tablename__ = 'mosdac_metadata'
+    
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    product_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    identifier: Mapped[str] = mapped_column(String(500))  # Filename
+    dataset_id: Mapped[str] = mapped_column(String(255), index=True)
+    timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    bounding_box: Mapped[Optional[Dict]] = mapped_column(JSON)
+    raw_metadata: Mapped[Dict] = mapped_column(JSON)  # Renamed from 'metadata' (SQLAlchemy reserved)
+    downloaded: Mapped[bool] = mapped_column(Boolean, default=False)
+    file_path: Mapped[Optional[str]] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class IncidentLog(Base):
+    """Incident Log for Alert Retractions and False Positives"""
+    __tablename__ = 'incident_logs'
+    
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    alert_id: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey('alerts.id', ondelete='SET NULL'), index=True)
+    incident_type: Mapped[str] = mapped_column(String(100))  # "false_positive", "retraction", etc.
+    reason: Mapped[str] = mapped_column(Text)
+    corrective_action: Mapped[str] = mapped_column(Text)
+    admin_user_id: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    extra_data: Mapped[Optional[Dict]] = mapped_column(JSON)  # Renamed from 'metadata'
+
+
 class Comment(Base):
     """Comments on community posts and reports"""
     __tablename__ = 'comments'
@@ -192,6 +230,24 @@ class Comment(Base):
     likes: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class AILog(Base):
+    """AI API call logs for token tracking and budget auditing"""
+    __tablename__ = 'ai_logs'
+    
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    user_id: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey('users.id', ondelete='SET NULL'), index=True)
+    endpoint: Mapped[str] = mapped_column(String(100), index=True)  # "chat", "whisper", "vision", "embeddings", "tts"
+    model: Mapped[str] = mapped_column(String(50))
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cached: Mapped[bool] = mapped_column(Boolean, default=False)
+    role: Mapped[Optional[str]] = mapped_column(String(50))
+    tool_calls: Mapped[Optional[list]] = mapped_column(JSON)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
 
 # ==================== DATABASE SESSION DEPENDENCY ====================

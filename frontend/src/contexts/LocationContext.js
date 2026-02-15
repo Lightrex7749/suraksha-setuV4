@@ -118,7 +118,10 @@ export const LocationProvider = ({ children }) => {
 
   const detectLocationByIP = async () => {
     try {
-      const response = await axios.get(`${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/current`);
+      const response = await axios.get(
+        `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/current`,
+        { timeout: 10000 }
+      );
       const locationData = {
         latitude: response.data.lat,
         longitude: response.data.lon,
@@ -129,20 +132,26 @@ export const LocationProvider = ({ children }) => {
       };
       setLocation(locationData);
       localStorage.setItem('userLocation', JSON.stringify(locationData));
+      setError(null);
       setLoading(false);
     } catch (err) {
       console.error('IP detection failed:', err);
-      setError('Failed to detect location');
+      const errorMessage = err.code === 'ECONNABORTED' 
+        ? 'Connection timeout. Please check your network.' 
+        : 'Unable to detect location automatically.';
+      setError(errorMessage);
       setLoading(false);
     }
   };
 
   const updateLocationByCoords = async (latitude, longitude) => {
     setLoading(true);
+    setError(null);
     try {
       const response = await axios.post(
         `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/update`,
-        { latitude, longitude, enable_alerts: true, alert_severity: ['warning', 'critical'] }
+        { latitude, longitude, enable_alerts: true, alert_severity: ['warning', 'critical'] },
+        { timeout: 10000 }
       );
       
       if (response.data.success) {
@@ -152,11 +161,15 @@ export const LocationProvider = ({ children }) => {
         };
         setLocation(locationData);
         localStorage.setItem('userLocation', JSON.stringify(locationData));
+        setError(null);
       }
       setLoading(false);
     } catch (err) {
       console.error('Location update failed:', err);
-      setError('Failed to update location');
+      const errorMessage = err.code === 'ECONNABORTED'
+        ? 'Connection timeout. Please try again.'
+        : 'Unable to update location. Please try using PIN code.';
+      setError(errorMessage);
       setLoading(false);
     }
   };
@@ -166,13 +179,19 @@ export const LocationProvider = ({ children }) => {
     setError(null);
 
     try {
+      // Validate PIN code format
+      if (!pinCode || !/^\d{6}$/.test(pinCode)) {
+        throw new Error('PIN code must be 6 digits');
+      }
+
       // First validate the PIN code
       const validateResponse = await axios.post(
         `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/validate-pincode`,
-        { pin_code: pinCode }
+        { pin_code: pinCode },
+        { timeout: 10000 }
       );
 
-      if (!validateResponse.data.is_valid) {
+      if (!validateResponse.data || !validateResponse.data.is_valid) {
         throw new Error('Invalid PIN code');
       }
 
@@ -183,7 +202,8 @@ export const LocationProvider = ({ children }) => {
           pin_code: pinCode,
           enable_alerts: true,
           alert_severity: ['warning', 'critical'],
-        }
+        },
+        { timeout: 10000 }
       );
 
       if (updateResponse.data.success) {
@@ -193,12 +213,27 @@ export const LocationProvider = ({ children }) => {
         };
         setLocation(locationData);
         localStorage.setItem('userLocation', JSON.stringify(locationData));
+        setError(null);
+        setLoading(false);
+        return { success: true, location: locationData };
       }
 
       setLoading(false);
       return { success: true };
     } catch (err) {
-      const errorMessage = err.response?.data?.detail || 'Invalid PIN code';
+      console.error('PIN code update error:', err);
+      let errorMessage = 'Unable to verify PIN code. Please try again.';
+      
+      if (err.code === 'ECONNABORTED') {
+        errorMessage = 'Request timeout. Please check your connection.';
+      } else if (err.response?.status === 400) {
+        errorMessage = err.response?.data?.detail || 'Invalid PIN code';
+      } else if (err.response?.status >= 500) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
       setError(errorMessage);
       setLoading(false);
       return { success: false, error: errorMessage };

@@ -70,11 +70,9 @@ const Landing = () => {
                   Every Disaster Alert.
                 </span>
               </h1>
-              <p className="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-                Disaster data in India is <span className="text-destructive font-semibold">scattered across IMD, ISRO, NDMA, CPCB</span> — making it 
-                <span className="italic"> technical, fragmented, and hard to understand</span>. 
-                <span className="font-bold text-foreground"> Suraksha Setu unifies it all</span> into simple, 
-                <span className="text-primary font-semibold"> multilingual, PIN-code based alerts</span> for everyone.
+              <p className="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed font-medium">
+                <span className="text-foreground font-bold">Real-time disaster alerts</span> for India — 
+                <span className="text-primary font-semibold">multilingual, PIN-code based, unified.</span>
               </p>
             </div>
 
@@ -511,9 +509,6 @@ const Landing = () => {
             <p className="flex items-center justify-center gap-2">
               <Shield className="w-4 h-4" />
               © 2026 Suraksha Setu. Building a safer tomorrow, today.
-            </p>
-            <p className="mt-2 text-sm">
-              Powered by IMD • ISRO • NDMA • CPCB • Google Gemini AI
             </p>
           </div>
         </div>

@@ -1,0 +1,69 @@
+{
+  "rules": [
+    {
+      "risk_type": "flood",
+      "severity": "high",
+      "user_role": "citizen",
+      "actions": [
+        "Avoid low-lying roads and underpasses.",
+        "Move valuables to higher shelves or floors.",
+        "Keep emergency numbers accessible.",
+        "Follow official evacuation advisories immediately."
+      ]
+    },
+    {
+      "risk_type": "flood",
+      "severity": "critical",
+      "user_role": "citizen",
+      "actions": [
+        "EVACUATE IMMEDIATELY to designated shelters.",
+        "Do not attempt to cross flowing water.",
+        "Assist vulnerable neighbors if safe.",
+        "Wait for official 'All Clear' signal."
+      ]
+    },
+    {
+      "risk_type": "flood",
+      "severity": "high",
+      "user_role": "farmer",
+      "actions": [
+        "Delay irrigation for 24–48 hours.",
+        "Move equipment to higher ground.",
+        "Protect stored crops from water exposure.",
+        "Ensure drainage channels are clear."
+      ]
+    },
+    {
+      "risk_type": "flood",
+      "severity": "high",
+      "user_role": "student",
+      "actions": [
+        "Stay indoors and avoid playing in floodwaters.",
+        "Keep your school books and bag in a high, dry place.",
+        "Listen to parents and authorities."
+      ]
+    },
+    {
+      "risk_type": "cyclone",
+      "severity": "high",
+      "user_role": "citizen",
+      "actions": [
+        "Secure loose objects (flower pots, trash cans) outside.",
+        "Stay away from windows and glass doors.",
+        "Charge mobile devices and power banks.",
+        "Stock up on essential medicines and non-perishable food."
+      ]
+    },
+    {
+      "risk_type": "aqi",
+      "severity": "high",
+      "user_role": "citizen",
+      "actions": [
+        "Wear an N95 mask if heading outdoors.",
+        "Use air purifiers if available.",
+        "Avoid strenuous outdoor activities.",
+        "Keep windows closed during peak traffic hours."
+      ]
+    }
+  ]
+}

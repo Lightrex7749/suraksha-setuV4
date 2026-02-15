@@ -39,7 +39,7 @@ const Weather = () => {
   const [aqiData, setAQIData] = useState(null);
   const [aqiHistory, setAQIHistory] = useState(null);
   const [error, setError] = useState(null);
-  const [currentLocation, setCurrentLocation] = useState('Bhubaneswar, Odisha');
+  const [currentLocation, setCurrentLocation] = useState(null);
 
   // Quick access cities for India
   const quickAccessCities = [
@@ -97,9 +97,8 @@ const Weather = () => {
         }
       }
     } catch (err) {
-      console.error('Auto-detect failed, using default:', err);
-      // Fallback to default location
-      loadWeatherData('Bhubaneswar');
+      console.error('Auto-detect failed:', err);
+      setError('Unable to detect location. Please search for a city.');
     } finally {
       setLoading(false);
     }
@@ -191,19 +190,7 @@ const Weather = () => {
   // Transform hourly data from API - show next 24 hours from current time
   const hourlyData = (() => {
     if (!weatherData?.hourly) {
-      // Fallback data if API fails
-      const now = new Date();
-      const currentHour = now.getHours();
-      return Array.from({ length: 24 }, (_, i) => {
-        const hour = (currentHour + i) % 24;
-        const time = new Date(now.setHours(hour, 0, 0, 0)).toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
-        return { 
-          time, 
-          temp: Math.round(20 + Math.random() * 10), 
-          rain: Math.round(Math.random() * 20), 
-          humidity: Math.round(60 + Math.random() * 20) 
-        };
-      });
+      return [];
     }
 
     // Find the current hour index in the API data

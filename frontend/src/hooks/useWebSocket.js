@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { toast } from 'sonner';
 
 /**
  * WebSocket hook for real-time disaster alerts
@@ -120,10 +119,6 @@ export const useWebSocket = (url, options = {}) => {
           setLocation(locationRef.current);
         }
 
-        toast.success('🔔 Real-time alerts connected', {
-          description: 'You will receive instant disaster notifications',
-        });
-
         if (onConnect) onConnect();
       };
 
@@ -135,26 +130,9 @@ export const useWebSocket = (url, options = {}) => {
 
           // Handle different message types
           if (message.type === 'new_alert') {
-            // New disaster alert
-            const severity = message.severity || 'info';
-            const severityEmoji = {
-              critical: '🚨',
-              warning: '⚠️',
-              info: 'ℹ️',
-            }[severity] || 'ℹ️';
-
-            const distance = message.distance_km
-              ? ` (${message.distance_km}km away)`
-              : '';
-
-            toast.error(`${severityEmoji} ${message.title || 'New Alert'}`, {
-              description: `${message.description || 'Disaster alert in your area'}${distance}`,
-              duration: 10000, // Show for 10 seconds
-              action: message.url ? {
-                label: 'View Details',
-                onClick: () => window.location.href = message.url,
-              } : null,
-            });
+            // New disaster alert - notification removed as per user request
+            // Alerts are displayed in the alerts page and dashboard instead
+            console.log('New alert received:', message.title);
           } else if (message.type === 'pong') {
             // Heartbeat response (silent)
           } else if (message.type === 'connection') {
@@ -197,26 +175,10 @@ export const useWebSocket = (url, options = {}) => {
 
           console.log(`Reconnecting in ${backoffDelay}ms... (Attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
 
-          // Only show toast after first failed attempt
-          if (reconnectAttempts > 0) {
-            toast.warning('⚠️ Alert connection lost', {
-              description: `Reconnecting in ${Math.round(backoffDelay / 1000)}s... (Attempt ${reconnectAttempts + 1})`,
-            });
-          }
-
           reconnectTimeoutRef.current = setTimeout(() => {
             setReconnectAttempts((prev) => prev + 1);
             connect();
           }, backoffDelay);
-        } else if (reconnectAttempts >= maxReconnectAttempts) {
-          toast.error('❌ Could not connect to alert service', {
-            description: 'Please refresh the page to try again',
-            duration: Infinity,
-            action: {
-              label: 'Refresh',
-              onClick: () => window.location.reload(),
-            },
-          });
         }
       };
     } catch (error) {

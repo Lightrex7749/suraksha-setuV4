@@ -27,18 +27,7 @@ const WeatherSummary = () => {
   }, []);
 
   if (loading || !weatherData) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/20 rounded-xl p-6 shadow-sm animate-pulse"
-      >
-        <div className="h-48 flex items-center justify-center text-muted-foreground">
-          Loading weather data...
-        </div>
-      </motion.div>
-    );
+    return null;
   }
 
   const { current, location } = weatherData;

@@ -1,0 +1,203 @@
+import logging
+import os
+import json
+import asyncio
+from datetime import datetime, timezone
+from typing import Dict, Any, Optional, List
+from fastapi import WebSocket
+
+# Push Notification Imports
+from pywebpush import webpush, WebPushException
+from py_vapid import Vapid
+from cryptography.hazmat.primitives import serialization
+
+# Initialize Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# ==================== PUSH NOTIFICATION SETUP ====================
+
+def get_vapid_keys():
+    """Retrieve or Generate VAPID keys for Web Push"""
+    private_key = os.environ.get('VAPID_PRIVATE_KEY')
+    public_key = os.environ.get('VAPID_PUBLIC_KEY')
+    
+    if not private_key or not public_key:
+        logger.warning("VAPID keys not found in environment. Generating new keys...")
+        vapid = Vapid()
+        vapid.generate_keys()
+        private_key = vapid.private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        ).decode('utf-8')
+        public_key = vapid.public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode('utf-8')
+        logger.info(f"Generated VAPID Keys (Add to .env):\nVAPID_PUBLIC_KEY={public_key}\nVAPID_PRIVATE_KEY=[HIDDEN]")
+        
+    return private_key, public_key
+
+VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY = get_vapid_keys()
+VAPID_CLAIMS_EMAIL = os.environ.get('VAPID_CLAIMS_EMAIL', 'mailto:admin@surakshasetu.com')
+
+
+class PushNotificationManager:
+    """Manages push notification subscriptions and sending"""
+    
+    def __init__(self):
+        # TODO: In production, load from DB
+        self.subscriptions = []
+    
+    def add_subscription(self, subscription_info: Dict[str, Any]) -> bool:
+        """Add a new push subscription"""
+        try:
+            endpoint = subscription_info.get('endpoint')
+            for sub in self.subscriptions:
+                if sub.get('endpoint') == endpoint:
+                    return True
+            
+            self.subscriptions.append({
+                **subscription_info,
+                'created_at': datetime.now(timezone.utc).isoformat()
+            })
+            logger.info(f"Added push subscription: {endpoint}")
+            return True
+        except Exception as e:
+            logger.error(f"Error adding subscription: {str(e)}")
+            return False
+    
+    def remove_subscription(self, subscription_info: Dict[str, Any]) -> bool:
+        """Remove a push subscription"""
+        try:
+            endpoint = subscription_info.get('endpoint')
+            self.subscriptions[:] = [s for s in self.subscriptions if s.get('endpoint') != endpoint]
+            return True
+        except Exception as e:
+            logger.error(f"Error removing subscription: {str(e)}")
+            return False
+    
+    async def send_notification(self, subscription_info: Dict[str, Any], payload: Dict[str, Any]) -> bool:
+        """Send a push notification to a single subscription"""
+        try:
+            payload_json = json.dumps(payload)
+            webpush(
+                subscription_info=subscription_info,
+                data=payload_json,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": VAPID_CLAIMS_EMAIL}
+            )
+            return True
+        except WebPushException as e:
+            logger.error(f"Web Push error: {str(e)}")
+            if e.response and e.response.status_code == 410: # Gone
+                self.remove_subscription(subscription_info)
+            return False
+        except Exception as e:
+            logger.error(f"Error sending push notification: {str(e)}")
+            return False
+
+    async def broadcast_notification(self, payload: Dict[str, Any]) -> int:
+        """Send notification to all subscribed clients"""
+        sent_count = 0
+        for subscription in self.subscriptions[:]:
+            success = await self.send_notification(subscription, payload)
+            if success:
+                sent_count += 1
+        return sent_count
+
+
+# ==================== WEBSOCKET CONNECTION MANAGER ====================
+
+class ConnectionManager:
+    """Manages WebSocket connections for real-time alerts"""
+    
+    def __init__(self):
+        self.active_connections: Dict[str, WebSocket] = {}
+        self.client_locations: Dict[str, Dict[str, Any]] = {}
+        self.sent_alerts: Dict[str, set] = {}
+
+    async def connect(self, websocket: WebSocket, client_id: str):
+        await websocket.accept()
+        self.active_connections[client_id] = websocket
+        self.sent_alerts[client_id] = set()
+        logger.info(f"WS Client connected: {client_id}")
+        
+        await self.send_personal_message({
+            "type": "connection",
+            "message": "Connected to Suraksha Setu real-time alerts",
+            "client_id": client_id,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }, websocket)
+
+    def disconnect(self, client_id: str):
+        self.active_connections.pop(client_id, None)
+        self.client_locations.pop(client_id, None)
+        self.sent_alerts.pop(client_id, None)
+        logger.info(f"WS Client disconnected: {client_id}")
+
+    def set_client_location(self, client_id: str, location: Dict[str, Any]):
+        self.client_locations[client_id] = location
+
+    async def send_personal_message(self, message: Dict[str, Any], websocket: WebSocket):
+        try:
+            await websocket.send_json(message)
+        except Exception as e:
+            logger.error(f"Error sending WS message: {e}")
+
+    async def broadcast(self, message: Dict[str, Any], alert_id: Optional[str] = None):
+        """Broadcast to all connected clients"""
+        for client_id, connection in self.active_connections.items():
+            if alert_id and alert_id in self.sent_alerts.get(client_id, set()):
+                continue
+            try:
+                await connection.send_json(message)
+                if alert_id:
+                    self.sent_alerts[client_id].add(alert_id)
+            except Exception:
+                pass # Disconnect handled in receive loop ideally, but safe here
+
+    async def broadcast_location_based(self, alert: Dict[str, Any], radius_km: float = 100):
+        """Broadcast alert only to clients within specified radius"""
+        alert_coords = alert.get('coordinates', {})
+        if not alert_coords or 'lat' not in alert_coords or 'lon' not in alert_coords:
+            await self.broadcast(alert, alert.get('id'))
+            return
+
+        alert_lat = alert_coords['lat']
+        alert_lon = alert_coords['lon']
+        alert_id = alert.get('id')
+        
+        for client_id, connection in self.active_connections.items():
+            if alert_id and alert_id in self.sent_alerts.get(client_id, set()):
+                continue
+
+            client_location = self.client_locations.get(client_id)
+            if client_location and 'latitude' in client_location and 'longitude' in client_location:
+                # Simple Euclidean approximation for speed (or use proper haversine if imported)
+                lat_diff = abs(client_location['latitude'] - alert_lat)
+                lon_diff = abs(client_location['longitude'] - alert_lon)
+                # 1 deg approx 111km
+                distance_km = ((lat_diff ** 2 + lon_diff ** 2) ** 0.5) * 111
+                
+                if distance_km <= radius_km:
+                    alert_with_dist = {**alert, "distance_km": round(distance_km, 1)}
+                    try:
+                        await connection.send_json(alert_with_dist)
+                        if alert_id:
+                            self.sent_alerts[client_id].add(alert_id)
+                    except Exception:
+                        pass
+            else:
+                # If location unknown, send alert (safety first)
+                try:
+                    await connection.send_json(alert)
+                    if alert_id:
+                        self.sent_alerts[client_id].add(alert_id)
+                except Exception:
+                    pass
+
+# Singleton Instances
+ws_manager = ConnectionManager()
+push_manager = PushNotificationManager()

@@ -5,7 +5,6 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
-import { toast } from 'sonner';
 
 const LocationSelector = ({ compact = false }) => {
   const {
@@ -25,12 +24,10 @@ const LocationSelector = ({ compact = false }) => {
     e.preventDefault();
     
     if (!pinCode.trim()) {
-      toast.error('Please enter a PIN code');
       return;
     }
 
     if (!/^\d{6}$/.test(pinCode.trim())) {
-      toast.error('PIN code must be 6 digits');
       return;
     }
 
@@ -39,19 +36,12 @@ const LocationSelector = ({ compact = false }) => {
     setValidating(false);
 
     if (result.success) {
-      toast.success('Location updated successfully!');
       setPinCode('');
-    } else {
-      toast.error(result.error || 'Failed to update location');
     }
   };
 
   const handleAutoDetect = async () => {
-    toast.promise(detectLocation(), {
-      loading: 'Detecting your location...',
-      success: 'Location detected!',
-      error: 'Failed to detect location',
-    });
+    await detectLocation();
   };
 
   if (compact && location) {

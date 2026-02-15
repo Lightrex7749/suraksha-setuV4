@@ -113,7 +113,7 @@ const EnhancedAIChatInterface = () => {
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
-      toast.error('Failed to get response');
+      console.error('Failed to get chat response:', error);
     } finally {
       setIsLoading(false);
     }
@@ -140,10 +140,10 @@ const EnhancedAIChatInterface = () => {
       setMediaRecorder(recorder);
       setIsRecording(true);
       setAudioChunks(chunks);
-      toast.success('🎤 Recording started...');
+      // Recording started
     } catch (error) {
       console.error('Error starting recording:', error);
-      toast.error('Could not access microphone');
+      console.error('Microphone access denied');
     }
   };
 
@@ -151,7 +151,7 @@ const EnhancedAIChatInterface = () => {
     if (mediaRecorder && mediaRecorder.state === 'recording') {
       mediaRecorder.stop();
       setIsRecording(false);
-      toast.success('Processing voice...');
+      // Processing voice
     }
   };
 
@@ -199,10 +199,10 @@ const EnhancedAIChatInterface = () => {
       // Speak the response
       speakText(response.data.response);
       
-      toast.success('Voice message processed!');
+      // Voice processed
     } catch (error) {
       console.error('Error processing voice:', error);
-      toast.error('Voice transcription failed. Try typing instead.');
+      console.error('Voice transcription failed');
       // Remove the voice message on error
       setMessages((prev) => prev.filter(msg => msg.id !== userMessage.id));
     } finally {
@@ -406,9 +406,9 @@ const EnhancedAIChatInterface = () => {
               onClick={() => {
                 setVoiceMode(!voiceMode);
                 if (!voiceMode) {
-                  toast.success('🎤 Voice Mode ON - Continuous conversation enabled!');
+                  // Voice mode enabled
                 } else {
-                  toast.info('Voice Mode OFF');
+                  // Voice mode disabled
                   // Stop recording if active
                   if (isRecording) stopRecording();
                 }

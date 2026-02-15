@@ -1,6 +1,5 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { Toaster } from "sonner";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { LocationProvider } from "@/contexts/LocationContext";
 import { ErrorBoundary } from "@/components/errors/ErrorBoundary";
@@ -29,7 +28,6 @@ function App() {
     <ErrorBoundary>
       <AuthProvider>
         <LocationProvider>
-          <Toaster position="top-right" richColors closeButton />
           <OfflineIndicator />
           <PWAInstallPrompt />
           <BrowserRouter>

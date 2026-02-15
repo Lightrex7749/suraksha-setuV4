@@ -50,37 +50,11 @@ const Community = () => {
       setFilteredPosts(response.data.posts || []);
     } catch (error) {
       console.error('Error fetching posts:', error);
-      toast.error('Failed to load community posts');
-      // Fallback to sample data on error
-      loadSampleData();
+      setPosts([]);
+      setFilteredPosts([]);
     } finally {
       setLoading(false);
     }
-  };
-
-  // Load sample data as fallback
-  const loadSampleData = () => {
-    const samplePosts = [
-      {
-        id: '1',
-        userId: 'user1',
-        author: 'Rahul Sharma',
-        timestamp: new Date(Date.now() - 600000).toISOString(),
-        title: 'Water Logging Alert',
-        content: 'Water logging near Sector 5 main road. Avoid this route if possible. Water level is above knee height.',
-        type: 'alert',
-        location: 'Sector 5, Bhubaneswar',
-        geolocation: { latitude: 20.2961, longitude: 85.8245 },
-        tags: ['flood', 'traffic', 'sector5'],
-        media: [],
-        likes: 24,
-        likedByUser: false,
-        savedByUser: false,
-        comments: []
-      }
-    ];
-    setPosts(samplePosts);
-    setFilteredPosts(samplePosts);
   };
 
   // Initial fetch
@@ -132,11 +106,9 @@ const Community = () => {
       const response = await axios.post(`${API_URL}/community/posts`, newPost);
       if (response.data.success && response.data.post) {
         setPosts([response.data.post, ...posts]);
-        toast.success('Post created successfully!');
       }
     } catch (error) {
       console.error('Error creating post:', error);
-      toast.error('Failed to create post. Please try again.');
     }
   };
 
@@ -154,7 +126,6 @@ const Community = () => {
       }
     } catch (error) {
       console.error('Error liking post:', error);
-      toast.error('Failed to update like status');
     }
   };
 
@@ -169,11 +140,9 @@ const Community = () => {
             ? { ...post, savedByUser: response.data.saved }
             : post
         ));
-        toast.success(response.data.saved ? 'Post saved!' : 'Post unsaved');
       }
     } catch (error) {
       console.error('Error saving post:', error);
-      toast.error('Failed to save post');
     }
   };
 
@@ -183,11 +152,9 @@ const Community = () => {
         const response = await axios.delete(`${API_URL}/community/posts/${postId}`);
         if (response.data.success) {
           setPosts(posts.filter(post => post.id !== postId));
-          toast.success('Post deleted successfully');
         }
       } catch (error) {
         console.error('Error deleting post:', error);
-        toast.error('Failed to delete post');
       }
     }
   };

@@ -21,13 +21,11 @@ const Dashboard = () => {
   const [recommendations, setRecommendations] = useState([]);
   const [score, setScore] = useState(78);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    const fetchRecommendations = async () => {
-      try {
-        setIsLoading(true);
-        const weatherRes = await axios.get(`${API_URL}/weather/auto-detect`);
+  const fetchRecommendations = async () => {
+    try {
+      const weatherRes = await axios.get(`${API_URL}/weather/auto-detect`);
         const weather = weatherRes.data.current;
         
         const recs = [];
@@ -94,43 +92,28 @@ const Dashboard = () => {
         if (weather.rain > 50) newScore -= 10;
         setScore(Math.max(30, Math.min(100, newScore)));
         
-      } catch (error) {
-        console.error('Error fetching recommendations:', error);
-        setRecommendations([
-          {
-            icon: '💡',
-            color: 'bg-primary/20 text-primary',
-            text: 'Stay prepared with your emergency kit.'
-          },
-          {
-            icon: '📱',
-            color: 'bg-blue-500/20 text-blue-600',
-            text: 'Keep emergency contacts handy.'
-          }
-        ]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    fetchRecommendations();
-    const interval = setInterval(fetchRecommendations, 300000);
-    return () => clearInterval(interval);
-  }, []);
+    } catch (error) {
+      console.error('Dashboard recommendations error:', error);
+      setRecommendations([
+        {
+          icon: '💡',
+          color: 'bg-primary/20 text-primary',
+          text: 'Stay prepared with your emergency kit.'
+        },
+        {
+          icon: '📱',
+          color: 'bg-blue-500/20 text-blue-600',
+          text: 'Keep emergency contacts handy.'
+        }
+      ]);
+    }
+  };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await fetchRecommendations();
     setTimeout(() => setIsRefreshing(false), 1000);
   };
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6 max-w-7xl mx-auto p-4">
-        <SkeletonDashboard />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto p-4">

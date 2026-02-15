@@ -26,15 +26,7 @@ const ActiveAlerts = () => {
         setAlerts(recentAlerts);
       } catch (error) {
         console.error('Error fetching alerts:', error);
-        // Fallback data
-        setAlerts([{
-          id: 1,
-          type: 'info',
-          title: 'System Alert',
-          message: 'Unable to fetch latest alerts. Please check connection.',
-          time: 'Now',
-          location: 'System'
-        }]);
+        setAlerts([]);
       } finally {
         setLoading(false);
       }
@@ -46,16 +38,22 @@ const ActiveAlerts = () => {
   }, []);
 
   if (loading) {
+    return null;
+  }
+  
+  if (alerts.length === 0) {
     return (
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
-        className="bg-card border border-border rounded-xl p-6 shadow-sm h-full flex flex-col animate-pulse"
+        className="bg-card border border-border rounded-xl p-6 shadow-sm flex flex-col"
       >
-        <div className="h-48 flex items-center justify-center text-muted-foreground">
-          Loading alerts...
-        </div>
+        <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 text-green-500" />
+          No Active Alerts
+        </h3>
+        <p className="text-sm text-muted-foreground mt-2">Your area is safe. No current warnings.</p>
       </motion.div>
     );
   }

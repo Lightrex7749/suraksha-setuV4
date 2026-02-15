@@ -17,8 +17,7 @@ import {
   Search,
   UserCircle,
   Phone,
-  UserCog,
-  ChevronDown
+  LogOut
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,7 +32,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from '@/contexts/AuthContext';
-import ChatBot from '@/components/chatbot/ChatBot';
 import BrandWatermark from '@/components/layout/BrandWatermark';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import { useTranslation } from 'react-i18next';
@@ -56,7 +54,7 @@ const SidebarItem = ({ icon: Icon, label, path, active, collapsed }) => (
 const MainLayout = () => {
   const routerLocation = useRouterLocation();
   const navigate = useNavigate();
-  const { user, logout, devMode, switchRole } = useAuth();
+  const { user, logout } = useAuth();
   const { alerts } = useLocation();
   const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(false);
@@ -209,47 +207,6 @@ const MainLayout = () => {
                   </div>
                 </div>
               </div>
-              
-              {/* 🔧 DEV MODE: Role Switcher */}
-              {devMode && user && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="w-full justify-between text-xs h-8">
-                      <div className="flex items-center gap-1">
-                        <UserCog className="w-3 h-3" />
-                        <span>Switch Role</span>
-                      </div>
-                      <ChevronDown className="w-3 h-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuLabel className="text-xs">
-                      Dev Tools - Quick Switch
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => switchRole('developer')} className="text-xs">
-                      <UserCog className="w-3 h-3 mr-2 text-purple-600" />
-                      Developer (All Access)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => switchRole('admin')} className="text-xs">
-                      <ShieldAlert className="w-3 h-3 mr-2 text-red-600" />
-                      Admin
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => switchRole('scientist')} className="text-xs">
-                      <Microscope className="w-3 h-3 mr-2 text-blue-600" />
-                      Scientist
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => switchRole('student')} className="text-xs">
-                      <GraduationCap className="w-3 h-3 mr-2 text-green-600" />
-                      Student
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => switchRole('citizen')} className="text-xs">
-                      <Users className="w-3 h-3 mr-2 text-gray-600" />
-                      Citizen
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
             </div>
           ) : (
             <div className="text-center text-xs text-muted-foreground">
@@ -286,12 +243,6 @@ const MainLayout = () => {
           </div>
 
           <div className="flex items-center gap-4">
-            {devMode && (
-              <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/20 hidden md:flex">
-                <UserCog className="w-3 h-3 mr-1" />
-                DEV MODE
-              </Badge>
-            )}
             {/* Dynamic Alert Badge - Only show if there are critical alerts */}
             {alerts && alerts.length > 0 && alerts.some(a => a.severity === 'critical' || a.severity === 'red') && (
               <div 
@@ -399,6 +350,56 @@ const MainLayout = () => {
                 </div>
               )}
             </div>
+            
+            {/* User Profile Dropdown with Logout */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="relative">
+                  <Avatar className="h-8 w-8 border-2 border-primary/20">
+                    <AvatarImage src={user?.photoURL} alt={user?.name} />
+                    <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                      {user ? getInitials(user.name) : 'U'}
+                    </AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">{user?.name || 'User'}</p>
+                    <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>
+                  <UserCircle className="mr-2 h-4 w-4" />
+                  <span>Profile</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Badge variant="outline" className="mr-2 text-xs">
+                    {user?.role || 'citizen'}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {getUserTypeLabel(user?.role || 'citizen')}
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  className="text-destructive focus:text-destructive cursor-pointer"
+                  onClick={async () => {
+                    try {
+                      await logout();
+                      navigate('/login');
+                    } catch (error) {
+                      console.error('Logout error:', error);
+                    }
+                  }}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Logout</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 
@@ -410,9 +411,6 @@ const MainLayout = () => {
 
       {/* Brand Watermark - Bottom Right Logo */}
       <BrandWatermark />
-
-      {/* Floating Chatbot */}
-      <ChatBot />
     </div>
   );
 };

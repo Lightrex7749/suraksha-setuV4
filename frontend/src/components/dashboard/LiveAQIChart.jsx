@@ -42,18 +42,7 @@ const LiveAQIChart = () => {
         }
       } catch (error) {
         console.error('Error fetching AQI chart data:', error);
-        // Generate mock data for fallback
-        const mockData = [];
-        for (let i = 6; i >= 0; i--) {
-          const date = new Date();
-          date.setDate(date.getDate() - i);
-          mockData.push({
-            date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            aqi: Math.floor(Math.random() * 100) + 50,
-            pm25: Math.floor(Math.random() * 50) + 10
-          });
-        }
-        setData(mockData);
+        setData([]);
       } finally {
         setLoading(false);
       }
@@ -64,12 +53,8 @@ const LiveAQIChart = () => {
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) {
-    return (
-      <div className="mt-6 bg-card border border-border rounded-xl p-6 h-64 flex items-center justify-center">
-        <div className="text-muted-foreground animate-pulse">Loading AQI trends...</div>
-      </div>
-    );
+  if (loading || data.length === 0) {
+    return null;
   }
 
   const CustomTooltip = ({ active, payload }) => {

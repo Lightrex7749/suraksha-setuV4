@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { ShieldAlert, Loader2, UserCircle, GraduationCap, FlaskConical, Shield } from 'lucide-react';
+import { ShieldAlert, Loader2, UserCircle, GraduationCap, FlaskConical } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const Register = () => {
   const navigate = useNavigate();
-  const { register, signInWithGoogle } = useAuth();
+  const { register, signInWithGoogle, firebaseReady } = useAuth();
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
@@ -115,6 +115,24 @@ const Register = () => {
           <CardDescription className="text-base">Join Suraksha Setu for disaster safety</CardDescription>
         </CardHeader>
         <CardContent>
+          {!firebaseReady && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>
+                <div className="space-y-2">
+                  <p className="font-semibold">⚠️ Firebase Configuration Error</p>
+                  <p className="text-sm">Authentication is not configured. Please complete the Firebase setup:</p>
+                  <ol className="text-xs list-decimal list-inside space-y-1 ml-2">
+                    <li>Go to <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="underline">Firebase Console</a></li>
+                    <li>Open project: <strong>surakhsa-setu</strong></li>
+                    <li>Navigate to: Authentication → Sign-in method</li>
+                    <li>Enable: <strong>Email/Password</strong> provider</li>
+                    <li>Enable: <strong>Google</strong> provider (optional)</li>
+                    <li>Refresh this page after configuration</li>
+                  </ol>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Full Name</Label>
@@ -125,7 +143,7 @@ const Register = () => {
                 type="text"
                 value={formData.name}
                 onChange={handleChange}
-                disabled={loading || googleLoading}
+                disabled={loading || googleLoading || !firebaseReady}
                 className="h-11"
                 data-testid="register-name-input"
               />
@@ -136,7 +154,7 @@ const Register = () => {
               <Select 
                 value={formData.role} 
                 onValueChange={(value) => setFormData({...formData, role: value})}
-                disabled={loading || googleLoading}
+                disabled={loading || googleLoading || !firebaseReady}
               >
                 <SelectTrigger className="h-11">
                   <SelectValue placeholder="Select your role" />
@@ -160,12 +178,6 @@ const Register = () => {
                       <span>Scientist/Researcher</span>
                     </div>
                   </SelectItem>
-                  <SelectItem value="admin">
-                    <div className="flex items-center gap-2">
-                      <Shield className="h-4 w-4" />
-                      <span>Admin/Official</span>
-                    </div>
-                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -179,7 +191,7 @@ const Register = () => {
                 type="email"
                 value={formData.email}
                 onChange={handleChange}
-                disabled={loading || googleLoading}
+                disabled={loading || googleLoading || !firebaseReady}
                 className="h-11"
                 data-testid="register-email-input"
               />
@@ -194,7 +206,7 @@ const Register = () => {
                 type="password"
                 value={formData.password}
                 onChange={handleChange}
-                disabled={loading || googleLoading}
+                disabled={loading || googleLoading || !firebaseReady}
                 className="h-11"
                 data-testid="register-password-input"
               />
@@ -209,7 +221,7 @@ const Register = () => {
                 type="password"
                 value={formData.confirmPassword}
                 onChange={handleChange}
-                disabled={loading || googleLoading}
+                disabled={loading || googleLoading || !firebaseReady}
                 className="h-11"
                 data-testid="register-confirm-password-input"
               />
@@ -224,7 +236,7 @@ const Register = () => {
             <Button 
               type="submit" 
               className="w-full h-11 bg-gradient-to-r from-primary to-purple-500 hover:from-primary/90 hover:to-purple-500/90" 
-              disabled={loading || googleLoading}
+              disabled={loading || googleLoading || !firebaseReady}
               data-testid="register-submit-button"
             >
               {loading ? (
@@ -251,7 +263,7 @@ const Register = () => {
               variant="outline"
               className="w-full h-11 border-2"
               onClick={handleGoogleSignIn}
-              disabled={loading || googleLoading}
+              disabled={loading || googleLoading || !firebaseReady}
             >
               {googleLoading ? (
                 <>

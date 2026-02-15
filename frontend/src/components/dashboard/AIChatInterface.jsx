@@ -75,7 +75,7 @@ const AIChatInterface = () => {
 
       recognitionRef.current.onstart = () => {
         setIsListening(true);
-        toast.info('🎤 Listening... Speak in any Indian language');
+        // Listening started silently
       };
 
       recognitionRef.current.onresult = (event) => {
@@ -90,7 +90,7 @@ const AIChatInterface = () => {
         const detectedLang = detectLanguage(transcript);
         if (detectedLang !== selectedLanguage) {
           setSelectedLanguage(detectedLang);
-          toast.success(`Language detected: ${languages.find(l => l.code === detectedLang)?.name || 'English'}`);
+          // Language detected silently
         }
         
         // If final result, auto-send
@@ -106,9 +106,9 @@ const AIChatInterface = () => {
       recognitionRef.current.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
         if (event.error === 'no-speech') {
-          toast.warning('No speech detected. Please try again.');
+          console.log('No speech detected');
         } else if (event.error === 'network') {
-          toast.error('Network error. Please check your connection.');
+          console.error('Network error during voice recognition');
         }
         setIsListening(false);
       };
@@ -156,7 +156,7 @@ const AIChatInterface = () => {
 
   const toggleVoiceInput = () => {
     if (!recognitionRef.current) {
-      toast.error('Voice recognition is not supported in your browser. Please use Chrome, Edge, or Safari.');
+      console.warn('Voice recognition not supported in browser');
       return;
     }
 
@@ -168,7 +168,7 @@ const AIChatInterface = () => {
         recognitionRef.current.start();
       } catch (error) {
         console.error('Error starting recognition:', error);
-        toast.error('Could not start voice recognition');
+        console.error('Could not start voice recognition');
       }
     }
   };
@@ -222,7 +222,7 @@ const AIChatInterface = () => {
     if (isSpeaking && synthRef.current) {
       synthRef.current.cancel();
     }
-    toast.success(voiceEnabled ? 'Voice output disabled' : 'Voice output enabled');
+    // Voice output toggled
   };
 
   const scrollToBottom = () => {
@@ -339,12 +339,12 @@ const AIChatInterface = () => {
 
   const copyMessage = (text) => {
     navigator.clipboard.writeText(text);
-    toast.success('Message copied to clipboard!');
+    // Message copied
   };
 
   const clearChat = () => {
     setMessages([]);
-    toast.success('Chat cleared');
+    // Chat cleared
   };
 
   return (

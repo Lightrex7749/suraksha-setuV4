@@ -13,31 +13,41 @@ import {
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyBR0Kbv95na40v8WdznKLiyruGkY70keuc",
-  authDomain: "surakhsa-setu.firebaseapp.com",
-  projectId: "surakhsa-setu",
-  storageBucket: "surakhsa-setu.firebasestorage.app",
-  messagingSenderId: "791422434644",
-  appId: "1:791422434644:web:f1207980bf4ce64b50dcc1",
-  measurementId: "G-MFPZ90JFFH"
+  apiKey: "AIzaSyAXy6yy5msccxqsw8jQP7t3FuFinNAwvPg",
+  authDomain: "suraksha-setu-1534a.firebaseapp.com",
+  projectId: "suraksha-setu-1534a",
+  storageBucket: "suraksha-setu-1534a.firebasestorage.app",
+  messagingSenderId: "743420774140",
+  appId: "1:743420774140:web:644b244bf9307fdaf2b979"
 };
 
 // Initialize Firebase
 let app;
 let analytics;
+let initError = null;
 
 try {
   app = initializeApp(firebaseConfig);
   analytics = getAnalytics(app);
+  console.log('✅ Firebase initialized successfully');
 } catch (error) {
-  console.warn('⚠️ Firebase initialization failed. Using development mode.', error.message);
-  console.log('💡 To use Firebase: Enable Email/Password auth in Firebase Console');
+  initError = error;
+  console.error('❌ Firebase initialization failed:', error.message);
+  console.error('Full error:', error);
+}
+
+if (!app) {
+  throw new Error(
+    'Firebase initialization failed. Please check your Firebase configuration. ' +
+    'Ensure the project exists and credentials are correct in firebase.js'
+  );
 }
 
 // Initialize Firebase Authentication and get a reference to the service
-export const auth = app ? getAuth(app) : null;
-export const googleProvider = app ? new GoogleAuthProvider() : null;
+export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
 export { analytics };
+export const isFirebaseConfigured = !!app && !initError;
 
 // Authentication functions
 export const registerWithEmail = async (email, password, displayName) => {

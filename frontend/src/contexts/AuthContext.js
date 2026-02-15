@@ -1,11 +1,8 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { auth, loginWithEmail, loginWithGoogle, registerWithEmail, logout as firebaseLogout } from '../config/firebase';
+import { auth, loginWithEmail, loginWithGoogle, registerWithEmail, logout as firebaseLogout, isFirebaseConfigured } from '../config/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 const AuthContext = createContext(null);
-
-// 🔧 TEMPORARY DEV MODE - Re-enabled until Firebase is configured
-const DEV_MODE = true; // Set to false once Firebase credentials are added
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -15,133 +12,135 @@ export const useAuth = () => {
   return context;
 };
 
+// Admin email - only this email gets admin role
+const ADMIN_EMAIL = 's.sam.11221177@gmail.com';
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [firebaseReady, setFirebaseReady] = useState(false);
+
+  // Check Firebase configuration on mount
+  useEffect(() => {
+    if (!isFirebaseConfigured) {
+      console.error('❌ Firebase is not properly configured');
+      setError('Firebase configuration error. Please check console for details.');
+      setFirebaseReady(false);
+      setLoading(false);
+    } else {
+      setFirebaseReady(true);
+    }
+  }, []);
 
   useEffect(() => {
-    // 🔧 DEVELOPMENT MODE BYPASS
-    if (DEV_MODE) {
-      console.log('🔧 DEV MODE: Using mock authentication');
+    // Check for persisted session first
+    const storedUser = localStorage.getItem('auth_user');
+    const storedToken = localStorage.getItem('auth_token');
+    const tokenExpiry = localStorage.getItem('auth_token_expiry');
 
-      // Check if user already exists in localStorage
-      const storedUser = localStorage.getItem('auth_user');
-      const storedToken = localStorage.getItem('auth_token');
-
-      if (storedUser && storedToken) {
+    // Validate token expiry
+    if (storedUser && storedToken && tokenExpiry) {
+      const expiryTime = parseInt(tokenExpiry, 10);
+      if (Date.now() < expiryTime) {
         try {
           const parsedUser = JSON.parse(storedUser);
           setUser(parsedUser);
           setToken(storedToken);
-          console.log('🔧 DEV MODE: Restored user with role:', parsedUser.role);
           setLoading(false);
+          console.log('Session restored for:', parsedUser.email);
           return;
         } catch (e) {
-          console.error('Failed to parse stored user', e);
+          console.error('Failed to restore session:', e);
+          // Clear invalid session data
+          localStorage.removeItem('auth_user');
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('auth_token_expiry');
         }
+      } else {
+        console.log('Session expired, clearing stored data');
+        localStorage.removeItem('auth_user');
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_token_expiry');
       }
+    }
 
-      // No stored user, don't auto-login
-      setUser(null);
-      setToken(null);
+    // Firebase authentication state listener
+    if (!auth || !firebaseReady) {
       setLoading(false);
       return;
     }
 
-    // PRODUCTION MODE: Firebase authentication
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         // User is signed in
         const idToken = await firebaseUser.getIdToken();
+
+        // Determine role: admin if specific email, otherwise citizen
+        const userRole = firebaseUser.email === ADMIN_EMAIL ? 'admin' : 'citizen';
 
         const userData = {
           id: firebaseUser.uid,
           email: firebaseUser.email,
           name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
           photoURL: firebaseUser.photoURL,
-          role: 'citizen', // Default role, can be updated from backend
+          role: userRole,
           emailVerified: firebaseUser.emailVerified
         };
 
         setUser(userData);
         setToken(idToken);
 
-        // Store in localStorage for persistence
+        // Store in localStorage with 1-hour expiry
+        const expiryTime = Date.now() + (60 * 60 * 1000); // 1 hour
         localStorage.setItem('auth_token', idToken);
         localStorage.setItem('auth_user', JSON.stringify(userData));
+        localStorage.setItem('auth_token_expiry', expiryTime.toString());
       } else {
         // User is signed out
         setUser(null);
         setToken(null);
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_user');
+        localStorage.removeItem('auth_token_expiry');
       }
       setLoading(false);
     });
 
     // Cleanup subscription on unmount
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [firebaseReady]);
 
   const login = async (email, password) => {
-    // 🔧 DEVELOPMENT MODE BYPASS
-    if (DEV_MODE) {
-      // Check if user exists in localStorage from previous registration
-      const storedUser = localStorage.getItem('auth_user');
-      let mockUser;
-
-      if (storedUser) {
-        try {
-          mockUser = JSON.parse(storedUser);
-          mockUser.email = email; // Update email to match login
-          console.log('🔧 DEV MODE: Mock login for', email, 'with stored role:', mockUser.role);
-        } catch (e) {
-          mockUser = {
-            id: 'dev_user_' + Date.now(),
-            email: email,
-            name: email.split('@')[0],
-            photoURL: null,
-            role: 'citizen',
-            emailVerified: true
-          };
-          console.log('🔧 DEV MODE: Mock login for', email, '(new user)');
-        }
-      } else {
-        mockUser = {
-          id: 'dev_user_' + Date.now(),
-          email: email,
-          name: email.split('@')[0],
-          photoURL: null,
-          role: 'citizen',
-          emailVerified: true
-        };
-        console.log('🔧 DEV MODE: Mock login for', email, '(new user)');
-      }
-
-      setUser(mockUser);
-      const token = 'dev_token_' + Date.now();
-      setToken(token);
-      localStorage.setItem('auth_user', JSON.stringify(mockUser));
-      localStorage.setItem('auth_token', token);
-      return mockUser;
+    if (!firebaseReady || !auth) {
+      throw new Error('Firebase authentication is not configured. Please check your Firebase setup.');
     }
-
-    // PRODUCTION MODE: Firebase login
     try {
       setError(null);
       setLoading(true);
       const firebaseUser = await loginWithEmail(email, password);
       const idToken = await firebaseUser.getIdToken();
 
+      // Determine role: admin if specific email, otherwise citizen
+      const userRole = firebaseUser.email === ADMIN_EMAIL ? 'admin' : 'citizen';
+
       const userData = {
         id: firebaseUser.uid,
         email: firebaseUser.email,
-        name: firebaseUser.displayName || email.split('@')[0],
+        name: firebaseUser.displayName || firebaseUser.email.split('@')[0],
         photoURL: firebaseUser.photoURL,
-        role: 'citizen'
+        role: userRole,
+        emailVerified: firebaseUser.emailVerified
       };
+
+      // Store with expiry
+      const expiryTime = Date.now() + (60 * 60 * 1000); // 1 hour
+      localStorage.setItem('auth_token', idToken);
+      localStorage.setItem('auth_user', JSON.stringify(userData));
+      localStorage.setItem('auth_token_expiry', expiryTime.toString());
 
       setUser(userData);
       setToken(idToken);
@@ -155,43 +154,35 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (email, password, displayName, role = 'citizen') => {
-    // 🔧 DEVELOPMENT MODE BYPASS
-    if (DEV_MODE) {
-      console.log('🔧 DEV MODE: Mock registration for', email, 'as', role);
-      const mockUser = {
-        id: 'dev_user_' + Date.now(),
-        email: email,
-        name: displayName || email.split('@')[0],
-        photoURL: null,
-        role: role,
-        emailVerified: true
-      };
-      setUser(mockUser);
-      setToken('dev_token_' + Date.now());
-      localStorage.setItem('auth_user', JSON.stringify(mockUser));
-      localStorage.setItem('auth_token', 'dev_token_' + Date.now());
-      return mockUser;
+    if (!firebaseReady || !auth) {
+      throw new Error('Firebase authentication is not configured. Please check your Firebase setup.');
     }
-
-    // PRODUCTION MODE: Firebase registration
     try {
       setError(null);
       setLoading(true);
       const firebaseUser = await registerWithEmail(email, password, displayName);
       const idToken = await firebaseUser.getIdToken();
 
+      // Determine role: admin if specific email, otherwise use selected role
+      const userRole = firebaseUser.email === ADMIN_EMAIL ? 'admin' : role;
+
       const userData = {
         id: firebaseUser.uid,
         email: firebaseUser.email,
         name: displayName || email.split('@')[0],
         photoURL: firebaseUser.photoURL,
-        role: role
+        role: userRole,
+        emailVerified: firebaseUser.emailVerified
       };
+
+      // Store with expiry
+      const expiryTime = Date.now() + (60 * 60 * 1000); // 1 hour
+      localStorage.setItem('auth_token', idToken);
+      localStorage.setItem('auth_user', JSON.stringify(userData));
+      localStorage.setItem('auth_token_expiry', expiryTime.toString());
 
       setUser(userData);
       setToken(idToken);
-      localStorage.setItem('auth_user', JSON.stringify(userData));
-      localStorage.setItem('auth_token', idToken);
       return userData;
     } catch (err) {
       setError(err.message);
@@ -202,36 +193,32 @@ export const AuthProvider = ({ children }) => {
   };
 
   const signInWithGoogle = async () => {
-    // 🔧 DEVELOPMENT MODE BYPASS
-    if (DEV_MODE) {
-      console.log('🔧 DEV MODE: Mock Google sign-in');
-      const mockUser = {
-        id: 'dev_user_google_' + Date.now(),
-        email: 'dev.google@suraksha.local',
-        name: 'Dev Google User',
-        photoURL: 'https://ui-avatars.com/api/?name=Dev+User&background=4F46E5&color=fff',
-        role: 'citizen',
-        emailVerified: true
-      };
-      setUser(mockUser);
-      setToken('dev_token_google_' + Date.now());
-      return mockUser;
+    if (!firebaseReady || !auth) {
+      throw new Error('Firebase authentication is not configured. Please check your Firebase setup.');
     }
-
-    // PRODUCTION MODE: Firebase Google sign-in
     try {
       setError(null);
       setLoading(true);
       const firebaseUser = await loginWithGoogle();
       const idToken = await firebaseUser.getIdToken();
 
+      // Determine role: admin if specific email, otherwise citizen
+      const userRole = firebaseUser.email === ADMIN_EMAIL ? 'admin' : 'citizen';
+
       const userData = {
         id: firebaseUser.uid,
         email: firebaseUser.email,
         name: firebaseUser.displayName || 'User',
         photoURL: firebaseUser.photoURL,
-        role: 'citizen'
+        role: userRole,
+        emailVerified: true
       };
+
+      // Store with expiry
+      const expiryTime = Date.now() + (60 * 60 * 1000); // 1 hour
+      localStorage.setItem('auth_token', idToken);
+      localStorage.setItem('auth_user', JSON.stringify(userData));
+      localStorage.setItem('auth_token_expiry', expiryTime.toString());
 
       setUser(userData);
       setToken(idToken);
@@ -245,17 +232,15 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    // 🔧 DEVELOPMENT MODE BYPASS
-    if (DEV_MODE) {
-      console.log('🔧 DEV MODE: Mock logout');
+    if (!firebaseReady || !auth) {
+      // Still allow logout even if Firebase is down
       setUser(null);
       setToken(null);
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
+      localStorage.removeItem('auth_token_expiry');
       return;
     }
-
-    // PRODUCTION MODE: Firebase logout
     try {
       setError(null);
       await firebaseLogout();
@@ -263,6 +248,7 @@ export const AuthProvider = ({ children }) => {
       setToken(null);
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
+      localStorage.removeItem('auth_token_expiry');
     } catch (err) {
       setError(err.message);
       throw err;
@@ -270,75 +256,22 @@ export const AuthProvider = ({ children }) => {
   };
 
   const refreshToken = async () => {
-    // 🔧 DEVELOPMENT MODE BYPASS
-    if (DEV_MODE) {
-      const newToken = 'dev_token_refreshed_' + Date.now();
-      setToken(newToken);
-      localStorage.setItem('auth_token', newToken);
-      return newToken;
+    if (!firebaseReady || !auth) {
+      console.warn('Cannot refresh token: Firebase not configured');
+      return null;
     }
-
-    // PRODUCTION MODE: Firebase token refresh
     if (auth.currentUser) {
       const idToken = await auth.currentUser.getIdToken(true);
+      const expiryTime = Date.now() + (60 * 60 * 1000); // 1 hour
       setToken(idToken);
       localStorage.setItem('auth_token', idToken);
+      localStorage.setItem('auth_token_expiry', expiryTime.toString());
       return idToken;
     }
     return null;
   };
 
-  // 🔧 QUICK JOIN FOR TESTING - Bypass authentication with role selection
-  const quickJoin = (role = 'developer') => {
-    if (!DEV_MODE) {
-      console.warn('Quick join only available in dev mode');
-      return;
-    }
 
-    console.log('🔧 DEV MODE: Quick join as', role);
-    const roleNames = {
-      'developer': 'Developer (Full Access)',
-      'admin': 'Admin User',
-      'scientist': 'Scientist User',
-      'student': 'Student User',
-      'citizen': 'Citizen User'
-    };
-
-    const mockUser = {
-      id: `dev_${role}_` + Date.now(),
-      email: `${role}@dev.local`,
-      name: roleNames[role] || role,
-      photoURL: null,
-      role: role,
-      emailVerified: true
-    };
-
-    const mockToken = 'dev_token_' + Date.now();
-    setUser(mockUser);
-    setToken(mockToken);
-    localStorage.setItem('auth_token', mockToken);
-    localStorage.setItem('auth_user', JSON.stringify(mockUser));
-    return mockUser;
-  };
-
-  // 🔧 SWITCH ROLE FOR TESTING - Change role without re-login
-  const switchRole = (newRole) => {
-    if (!DEV_MODE) {
-      console.warn('Role switching only available in dev mode');
-      return;
-    }
-
-    if (!user) {
-      console.warn('No user logged in');
-      return;
-    }
-
-    console.log('🔧 DEV MODE: Switching role from', user.role, 'to', newRole);
-    const updatedUser = { ...user, role: newRole };
-    setUser(updatedUser);
-    localStorage.setItem('auth_user', JSON.stringify(updatedUser));
-    return updatedUser;
-  };
 
   const value = {
     user,
@@ -348,12 +281,10 @@ export const AuthProvider = ({ children }) => {
     signInWithGoogle,
     logout,
     refreshToken,
-    quickJoin, // 🔧 Quick join for testing
-    switchRole, // 🔧 Switch role for testing
     loading,
     error,
     isAuthenticated: !!user,
-    devMode: DEV_MODE // Expose dev mode status
+    firebaseReady
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
