@@ -59,8 +59,9 @@ const SurakshaScore = ({ score: initialScore = 85 }) => {
     setBreakdown({
       location_risk: Math.max(0, 100 - (criticalAlerts * 20)),
       alert_impact: Math.max(0, 100 - (criticalAlerts * 25 + warningAlerts * 10)),
-      weather_conditions: 85,
-      preparedness: 75,
+      weather_risk: 85,
+      disaster_proximity: Math.max(0, 100 - alerts.length * 8),
+      infrastructure: 85,
     });
   };
 
@@ -93,9 +94,9 @@ const SurakshaScore = ({ score: initialScore = 85 }) => {
 
   const breakdownData = breakdown ? [
     { name: 'Location Risk', value: breakdown.location_risk, icon: MapPin },
-    { name: 'Weather', value: breakdown.weather_conditions, icon: CloudRain },
-    { name: 'Active Alerts', value: breakdown.alert_impact, icon: AlertTriangle },
-    { name: 'Preparedness', value: breakdown.preparedness, icon: TrendingUp },
+    { name: 'Weather Risk', value: breakdown.weather_risk, icon: CloudRain },
+    { name: 'Disaster Proximity', value: breakdown.disaster_proximity, icon: AlertTriangle },
+    { name: 'Infrastructure', value: breakdown.infrastructure, icon: TrendingUp },
   ] : [];
 
   return (
@@ -199,13 +200,13 @@ const SurakshaScore = ({ score: initialScore = 85 }) => {
                 Recommendations
               </h5>
               <ul className="text-xs text-muted-foreground space-y-1">
-                {breakdown.preparedness < 80 && (
+                {breakdown.infrastructure < 80 && (
                   <li>• Review your emergency kit and family safety plan</li>
                 )}
-                {breakdown.alert_impact < 70 && (
-                  <li>• {alerts.length} active alerts in your area - stay updated</li>
+                {breakdown.disaster_proximity < 70 && (
+                  <li>• Active alerts nearby - stay updated</li>
                 )}
-                {breakdown.weather_conditions < 70 && (
+                {breakdown.weather_risk < 70 && (
                   <li>• Weather conditions unfavorable - limit outdoor activities</li>
                 )}
                 {breakdown.location_risk < 80 && (

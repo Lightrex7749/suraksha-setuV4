@@ -312,7 +312,7 @@ const Chatbot = () => {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2 text-center">
-                  Powered by Gemini AI
+                  Powered by Suraksha Setu AI
                 </p>
               </div>
             </Card>

@@ -36,9 +36,9 @@ const ImpactStats = () => {
           axios.get(`${API_URL}/evacuation-centers`)
         ]);
 
-        const disasters = disastersRes.data;
-        const alerts = alertsRes.data;
-        const shelters = sheltersRes.data;
+        const disasters = disastersRes.data?.disasters || disastersRes.data || [];
+        const alerts = alertsRes.data?.alerts || alertsRes.data || [];
+        const shelters = Array.isArray(sheltersRes.data) ? sheltersRes.data : sheltersRes.data?.centers || [];
 
         // Calculate affected people from recent disasters
         const recentDisasters = disasters.filter(d => {

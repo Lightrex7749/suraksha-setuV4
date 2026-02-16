@@ -20,18 +20,20 @@ const DisasterTimeline = () => {
         const timelineEvents = [];
         
         // Add recent alerts
-        alertsRes.data.slice(0, 2).forEach(alert => {
-          const time = new Date(alert.issued_at);
+        const alertsList = alertsRes.data?.alerts || [];
+        alertsList.slice(0, 2).forEach(alert => {
+          const time = new Date(alert.created_at || alert.issued_at);
           timelineEvents.push({
             time: time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            title: alert.title,
-            type: alert.severity === 'red' ? 'critical' : alert.severity === 'orange' ? 'warning' : 'info',
-            location: alert.location
+            title: alert.title || alert.type || 'Alert',
+            type: alert.severity === 'critical' || alert.severity === 'red' ? 'critical' : alert.severity === 'warning' || alert.severity === 'orange' ? 'warning' : 'info',
+            location: alert.location || alert.region || 'Unknown'
           });
         });
         
         // Add recent disasters
-        disastersRes.data.slice(0, 2).forEach(disaster => {
+        const disastersList = disastersRes.data?.disasters || [];
+        disastersList.slice(0, 2).forEach(disaster => {
           const time = new Date(disaster.date);
           timelineEvents.push({
             time: time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),

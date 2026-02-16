@@ -14,14 +14,14 @@ const ActiveAlerts = () => {
     const fetchAlerts = async () => {
       try {
         const response = await axios.get(`${API_URL}/alerts`);
-        // Take only top 5 most recent alerts
-        const recentAlerts = response.data.slice(0, 5).map(alert => ({
+        const alertsArr = response.data?.alerts || response.data || [];
+        const recentAlerts = alertsArr.slice(0, 5).map(alert => ({
           id: alert.id,
-          type: alert.severity === 'red' ? 'critical' : alert.severity === 'orange' ? 'warning' : 'info',
+          type: alert.severity === 'critical' || alert.severity === 'red' ? 'critical' : alert.severity === 'warning' || alert.severity === 'orange' ? 'warning' : 'info',
           title: alert.title,
           message: alert.description,
-          time: new Date(alert.issued_at).toLocaleString(),
-          location: alert.location
+          time: alert.created_at ? new Date(alert.created_at).toLocaleString() : '',
+          location: typeof alert.location === 'string' ? alert.location : alert.location?.city || alert.location?.state || ''
         }));
         setAlerts(recentAlerts);
       } catch (error) {
@@ -33,29 +33,12 @@ const ActiveAlerts = () => {
     };
 
     fetchAlerts();
-    const interval = setInterval(fetchAlerts, 60000); // Update every minute
+    const interval = setInterval(fetchAlerts, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) {
+  if (loading || alerts.length === 0) {
     return null;
-  }
-  
-  if (alerts.length === 0) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="bg-card border border-border rounded-xl p-6 shadow-sm flex flex-col"
-      >
-        <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
-          <AlertTriangle className="w-5 h-5 text-green-500" />
-          No Active Alerts
-        </h3>
-        <p className="text-sm text-muted-foreground mt-2">Your area is safe. No current warnings.</p>
-      </motion.div>
-    );
   }
   return (
     <motion.div 
