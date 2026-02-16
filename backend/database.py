@@ -3,7 +3,7 @@ PostgreSQL Database Configuration and Models
 """
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
-from sqlalchemy import String, DateTime, JSON, Boolean, Integer, Float, Text, ForeignKey
+from sqlalchemy import String, DateTime, JSON, Boolean, Integer, Float, Text, ForeignKey, TypeDecorator
 from geoalchemy2 import Geography
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
@@ -59,6 +59,14 @@ if DATABASE_URL:
 else:
     raise ValueError("DATABASE_URL not set in environment variables")
 
+# Define SafeGeography based on database type
+if DATABASE_URL and DATABASE_URL.startswith('sqlite'):
+    SafeGeography = JSON
+else:
+    class SafeGeography(Geography):
+        def __init__(self, **kwargs):
+            super().__init__(geometry_type='POINT', srid=4326, **kwargs)
+
 # Create async session factory
 AsyncSessionLocal = async_sessionmaker(
     engine,
@@ -82,7 +90,7 @@ class User(Base):
     full_name: Mapped[Optional[str]] = mapped_column(String(255))
     user_type: Mapped[str] = mapped_column(String(50))  # student, scientist, admin, citizen
     location: Mapped[Optional[Dict]] = mapped_column(JSON)
-    geom: Mapped[Any] = mapped_column(Geography(geometry_type='POINT', srid=4326), nullable=True)
+    geom: Mapped[Any] = mapped_column(SafeGeography(), nullable=True)
     preferences: Mapped[Optional[Dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -113,7 +121,7 @@ class Alert(Base):
     title: Mapped[str] = mapped_column(String(500))
     description: Mapped[str] = mapped_column(Text)
     location: Mapped[Dict] = mapped_column(JSON)  # {lat, lon, city, state, pin_codes}
-    geom: Mapped[Any] = mapped_column(Geography(geometry_type='POINT', srid=4326), nullable=True)
+    geom: Mapped[Any] = mapped_column(SafeGeography(), nullable=True)
     alert_metadata: Mapped[Optional[Dict]] = mapped_column(JSON)
     source: Mapped[str] = mapped_column(String(100))  # IMD, ISRO, CPCB, etc.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
@@ -134,7 +142,7 @@ class CommunityReport(Base):
     title: Mapped[str] = mapped_column(String(500))
     description: Mapped[str] = mapped_column(Text)
     location: Mapped[Dict] = mapped_column(JSON)
-    geom: Mapped[Any] = mapped_column(Geography(geometry_type='POINT', srid=4326), nullable=True)
+    geom: Mapped[Any] = mapped_column(SafeGeography(), nullable=True)
     media_urls: Mapped[Optional[list]] = mapped_column(JSON)
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     upvotes: Mapped[int] = mapped_column(Integer, default=0)
@@ -152,7 +160,7 @@ class StatusCheck(Base):
     status: Mapped[str] = mapped_column(String(20))  # safe, help_needed, emergency
     message: Mapped[Optional[str]] = mapped_column(Text)
     location: Mapped[Dict] = mapped_column(JSON)
-    geom: Mapped[Any] = mapped_column(Geography(geometry_type='POINT', srid=4326), nullable=True)
+    geom: Mapped[Any] = mapped_column(SafeGeography(), nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
 

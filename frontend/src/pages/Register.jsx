@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { ShieldAlert, Loader2, UserCircle, GraduationCap, FlaskConical } from 'lucide-react';
+import { ShieldAlert, Loader2, UserCircle, GraduationCap, FlaskConical, Phone } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -18,6 +18,7 @@ const Register = () => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    phone: '',
     password: '',
     confirmPassword: '',
     role: 'citizen'
@@ -35,8 +36,16 @@ const Register = () => {
     e.preventDefault();
     setError('');
     
-    if (!formData.name || !formData.email || !formData.password || !formData.confirmPassword) {
+    if (!formData.name || !formData.email || !formData.phone || !formData.password || !formData.confirmPassword) {
       setError('All fields are required');
+      return;
+    }
+
+    // Validate Indian phone number
+    const phoneClean = formData.phone.replace(/[\s\-]/g, '');
+    const phoneRegex = /^(\+91)?[6-9]\d{9}$/;
+    if (!phoneRegex.test(phoneClean)) {
+      setError('Please enter a valid Indian mobile number (e.g., +91 9876543210)');
       return;
     }
 
@@ -53,7 +62,7 @@ const Register = () => {
     setLoading(true);
 
     try {
-      await register(formData.email, formData.password, formData.name, formData.role);
+      await register(formData.email, formData.password, formData.name, formData.role, formData.phone);
       navigate('/dashboard');
     } catch (err) {
       console.error('Registration error:', err);
@@ -195,6 +204,25 @@ const Register = () => {
                 className="h-11"
                 data-testid="register-email-input"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="phone">Mobile Number</Label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  id="phone"
+                  name="phone"
+                  placeholder="+91 9876543210" 
+                  type="tel"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  disabled={loading || googleLoading || !firebaseReady}
+                  className="h-11 pl-10"
+                  data-testid="register-phone-input"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Used for emergency SMS alerts only</p>
             </div>
             
             <div className="space-y-2">

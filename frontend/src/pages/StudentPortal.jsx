@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import Quiz from "@/components/student/Quiz";
+import StudentChat from "@/components/student/StudentChat";
 
 const StudentPortal = () => {
   const [activeQuiz, setActiveQuiz] = useState(null);
@@ -65,8 +66,8 @@ const StudentPortal = () => {
   if (activeQuiz) {
     return (
       <div className="max-w-7xl mx-auto space-y-6">
-        <Button 
-          variant="ghost" 
+        <Button
+          variant="ghost"
           onClick={() => setActiveQuiz(null)}
           className="mb-4"
         >
@@ -188,8 +189,8 @@ const StudentPortal = () => {
                         <p className="text-sm text-muted-foreground mb-3">
                           {quiz.description}
                         </p>
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           className="w-full gap-2 group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
                           variant="outline"
                         >
@@ -207,7 +208,8 @@ const StudentPortal = () => {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Daily Challenge */}
+          {/* Gyan Setu Chat Widget */}
+          <StudentChat />
           <Card className="border-orange-200 bg-orange-50 dark:bg-orange-900/10 dark:border-orange-900/20">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-orange-700 dark:text-orange-500">

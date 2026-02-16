@@ -105,21 +105,29 @@ ai_router = APIRouter(prefix="/api/ai", tags=["AI"])
 async def ai_chat(request: Request):
     """
     Unified AI Chat Endpoint.
-    Body: { "role": "citizen", "message": "...", "context": {...} }
+    Body: { "role": "citizen", "message"|"query": "...", "context": {...} }
     Supports: text queries, function calling, RAG (scientist)
     """
     data = await request.json()
     role = data.get("role", "citizen")
-    message = data.get("message", "")
+    message = data.get("message") or data.get("query", "")
     context = data.get("context", {})
+
+    # Pass through widget-specific fields
+    if data.get("rag_mode"):
+        context["rag_mode"] = True
+    if data.get("report_mode"):
+        context["report_mode"] = data["report_mode"]
+    if data.get("locale"):
+        context["locale"] = data["locale"]
 
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
 
-    response = await orchestrator.route_request(role, message, context)
+    result = await orchestrator.route_request(role, message, context)
 
     # Log to ai_logs
-    usage = response.get("usage") or {}
+    usage = result.get("usage") or {}
     try:
         async with AsyncSessionLocal() as db:
             log = AILog(
@@ -130,15 +138,30 @@ async def ai_chat(request: Request):
                 completion_tokens=usage.get("completion", 0),
                 total_tokens=usage.get("total", usage.get("total_tokens", 0)),
                 role=role,
-                tool_calls=response.get("tool_calls_executed"),
+                tool_calls=result.get("tool_calls_executed"),
             )
             db.add(log)
             await db.commit()
     except Exception as e:
         logger.warning(f"AI log write failed: {e}")
 
-    return response
+    # Reshape response for frontend widgets
+    return {
+        "success": result.get("success", True),
+        "response": result.get("message", ""),
+        "answer": result.get("message", ""),
+        "role": role,
+        "confidence": result.get("confidence", 0.65),
+        "token_cost": result.get("token_cost", 0),
+        "sources": result.get("sources", []),
+        "cached": result.get("cached", False),
+        "quiz": result.get("quiz"),
+        "tool_calls_executed": result.get("tool_calls_executed", []),
+        "usage": usage,
+    }
 
+
+from ai.voice_pipeline import process_voice_query
 
 @ai_router.post("/voice", dependencies=[Depends(RateLimiter(times=5, seconds=60))])
 async def ai_voice(
@@ -166,6 +189,22 @@ async def ai_voice(
 
     if result.get("error"):
         raise HTTPException(status_code=500, detail=result["error"])
+
+    # Log voice usage
+    try:
+        async with AsyncSessionLocal() as db:
+            log = AILog(
+                id=str(uuid.uuid4()),
+                endpoint="voice",
+                model="whisper-1",
+                total_tokens=0, # specific to audio
+                role=role,
+                tool_calls=None
+            )
+            db.add(log)
+            await db.commit()
+    except Exception as e:
+        logger.warning(f"Voice log failed: {e}")
 
     return result
 
@@ -374,6 +413,153 @@ async def ai_logs(limit: int = 50):
 
 
 # ══════════════════════════════════════════════════════════════
+#  SAFETY SCORE
+# ══════════════════════════════════════════════════════════════
+@api_router.get("/safety-score")
+async def get_safety_score(
+    latitude: float = None, longitude: float = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Compute safety score based on nearby alerts and risk factors."""
+    # Get active alerts
+    result = await db.execute(
+        select(Alert).where(Alert.is_active == True, Alert.retracted == False)
+    )
+    alerts = result.scalars().all()
+
+    base_score = 90
+    critical = sum(1 for a in alerts if a.severity in ("critical", "red"))
+    warning = sum(1 for a in alerts if a.severity in ("warning", "orange"))
+    base_score -= critical * 15 + warning * 5
+    base_score = max(0, min(100, base_score))
+
+    return {
+        "total_score": base_score,
+        "breakdown": {
+            "location_risk": max(0, 100 - critical * 20),
+            "weather_risk": max(0, 100 - warning * 10),
+            "disaster_proximity": 100 if not alerts else max(0, 100 - len(alerts) * 8),
+            "infrastructure": 85,
+        },
+        "active_alerts": len(alerts),
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+#  USER PHONE REGISTRATION (for SMS alerts)
+# ══════════════════════════════════════════════════════════════
+from sms_service import phone_registry, alert_dispatcher, sms_service
+from pydantic import BaseModel as PydanticBaseModel
+
+class PhoneRegistrationRequest(PydanticBaseModel):
+    uid: str
+    phone: str
+    email: str = ""
+    name: str = ""
+
+@api_router.post("/users/register-phone")
+async def register_phone(req: PhoneRegistrationRequest):
+    """Register a phone number for SMS alerts."""
+    phone_registry.register(
+        uid=req.uid,
+        phone=req.phone,
+        email=req.email,
+        name=req.name,
+    )
+    return {"success": True, "registered": phone_registry.count}
+
+
+@api_router.get("/users/phone-count")
+async def phone_count():
+    return {"registered_phones": phone_registry.count}
+
+
+@api_router.get("/sms/audit-log")
+async def sms_audit_log(limit: int = 50):
+    """Get SMS dispatch audit trail."""
+    return {"logs": alert_dispatcher.get_sms_audit_log(limit)}
+
+
+@api_router.get("/sms/status")
+async def sms_status():
+    """Check SMS service availability and thresholds."""
+    return {
+        "twilio_available": sms_service.is_available,
+        "registered_phones": phone_registry.count,
+        "thresholds": {
+            "auto_notify": 0.70,
+            "admin_review_high": 0.70,
+            "admin_review_low": 0.45,
+            "vision_auto_alert": 0.85,
+            "vision_manual_review": 0.60,
+        },
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+#  EVACUATION CENTERS
+# ══════════════════════════════════════════════════════════════
+@api_router.get("/evacuation-centers")
+async def get_evacuation_centers(lat: float = None, lon: float = None):
+    """Return known evacuation / relief centers."""
+    # Static seed data – in production, this would come from DB
+    centers = [
+        {"id": "evac_1", "name": "District Hospital Shelter", "type": "hospital",
+         "coordinates": {"lat": 28.6139, "lon": 77.2090}, "capacity": 500, "status": "open"},
+        {"id": "evac_2", "name": "Community Relief Camp", "type": "relief_camp",
+         "coordinates": {"lat": 28.6200, "lon": 77.2150}, "capacity": 300, "status": "open"},
+        {"id": "evac_3", "name": "School Emergency Shelter", "type": "school",
+         "coordinates": {"lat": 28.6100, "lon": 77.2000}, "capacity": 200, "status": "open"},
+    ]
+    return centers
+
+
+# ══════════════════════════════════════════════════════════════
+#  PUSH VAPID KEY
+# ══════════════════════════════════════════════════════════════
+@api_router.get("/push/vapid-public-key")
+async def get_vapid_public_key():
+    """Return the VAPID public key for push subscriptions."""
+    from notifications import VAPID_PUBLIC_KEY
+    return {"publicKey": VAPID_PUBLIC_KEY}
+
+
+# ══════════════════════════════════════════════════════════════
+#  GRID ZONE RISK + AR OVERLAY
+# ══════════════════════════════════════════════════════════════
+from grid_risk import grid_risk_service
+
+@api_router.get("/grid/zone-risk")
+async def get_zone_risk(lat: float, lon: float, radius_km: float = 10.0):
+    """
+    Main endpoint: GPS → 10km grid cells → risk states → AR overlay.
+    Multiple users in the same area share grid state (credit-safe).
+    """
+    radius_km = min(radius_km, 50.0)  # Cap at 50km
+    result = await grid_risk_service.get_zone_risk(lat, lon, radius_km)
+    return result
+
+
+@api_router.get("/grid/ar-overlay")
+async def get_ar_overlay(lat: float, lon: float, radius_km: float = 10.0):
+    """
+    AR-specific endpoint: returns only the overlay payload.
+    AR visualizes last validated state — never reasons.
+    """
+    radius_km = min(radius_km, 50.0)
+    result = await grid_risk_service.get_zone_risk(lat, lon, radius_km)
+    return result["ar_overlay"]
+
+
+@api_router.post("/grid/refresh")
+async def force_refresh_grid(lat: float, lon: float, radius_km: float = 10.0):
+    """Force-refresh grid cells (admin/ingestion use)."""
+    radius_km = min(radius_km, 50.0)
+    await grid_risk_service.force_refresh(lat, lon, radius_km)
+    return {"status": "refreshed", "lat": lat, "lon": lon, "radius_km": radius_km}
+
+
+# ══════════════════════════════════════════════════════════════
 #  UTILITY
 # ══════════════════════════════════════════════════════════════
 @api_router.get("/geo/reverse")
@@ -394,12 +580,37 @@ app.include_router(ai_router)
 app.include_router(api_router)
 app.include_router(admin_router)
 
+# Weather & AQI routes
+from routes.weather import weather_router
+app.include_router(weather_router)
+
+# Risk & Anomaly Detection routes
+from routes.risk import risk_router
+app.include_router(risk_router)
+
+# Community routes
+from routes.community import community_router
+app.include_router(community_router)
+
+# Disasters routes
+from routes.disasters import disasters_router
+app.include_router(disasters_router)
+
+# Location routes
+from routes.location import location_router
+app.include_router(location_router)
+
+# Scientist routes
+from routes.scientist import scientist_router
+app.include_router(scientist_router)
+
 # Include admin routes from routes/ if exists
 try:
     from routes.admin import router as admin_routes_router
     app.include_router(admin_routes_router)
 except ImportError:
     pass
+
 
 
 @app.get("/")
@@ -420,3 +631,9 @@ def read_root():
             "rag_system": "active",
         },
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    print("🚀 Starting Suraksha Setu Backend Server...")
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)

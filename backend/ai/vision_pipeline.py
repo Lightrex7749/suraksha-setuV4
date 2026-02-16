@@ -73,29 +73,21 @@ async def analyze_community_image(
             "requires_immediate_action": False,
         }
 
-    # Step 3: Alert-safeguard decision
-    from alert_safeguards import safeguard
-
+    # Step 3: Severity-based decision (inline safeguard)
+    severity = analysis.get("severity", "low")
+    confidence = analysis.get("confidence", 0.0)
     has_corroboration = bool(user_description and len(user_description) > 20)
 
-    decision = safeguard.evaluate_alert_safety(
-        risk_score={"low": 0.2, "medium": 0.5, "high": 0.75, "critical": 0.95}.get(
-            analysis.get("severity", "low"), 0.3
-        ),
-        alert_source="vision",
-        confidence=analysis.get("confidence", 0.0),
-        vision_verdict={
-            "confidence": analysis.get("confidence", 0.0),
-            "has_corroboration": has_corroboration,
-        },
-    )
+    risk_score = {"low": 0.2, "medium": 0.5, "high": 0.75, "critical": 0.95}.get(severity, 0.3)
+    should_notify = risk_score >= 0.5 and confidence >= 0.5
+    requires_review = 0.3 <= risk_score < 0.75 or (not has_corroboration and risk_score >= 0.5)
 
     return {
         "analysis": analysis,
         "decision": {
-            "should_notify": decision.should_notify,
-            "requires_review": decision.requires_human_review,
-            "reason": decision.reason,
+            "should_notify": should_notify,
+            "requires_review": requires_review,
+            "reason": f"Severity={severity}, confidence={confidence:.2f}, corroboration={has_corroboration}",
         },
         "usage": vision_result.get("usage"),
         "error": None,

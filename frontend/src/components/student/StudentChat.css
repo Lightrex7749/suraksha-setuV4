@@ -1,0 +1,361 @@
+/* ═══════════════════════════════════════════════════════════
+   Gyan Setu — Student Chat Widget
+   Mobile-first, subtle shadows, green accent
+   ═══════════════════════════════════════════════════════════ */
+
+.student-chat {
+  display: flex;
+  flex-direction: column;
+  height: 480px;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(34, 197, 94, 0.15);
+  background: var(--card, #fff);
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+}
+
+/* ─── Header ─── */
+.student-chat__header {
+  background: linear-gradient(135deg, #16a34a 0%, #22c55e 50%, #4ade80 100%);
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.student-chat__header-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.student-chat__header-text h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.student-chat__header-text p {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+/* ─── Messages ─── */
+.student-chat__messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scroll-behavior: smooth;
+  background: var(--background, #fafafa);
+}
+
+.student-chat__messages::-webkit-scrollbar {
+  width: 4px;
+}
+
+.student-chat__messages::-webkit-scrollbar-thumb {
+  background: rgba(34, 197, 94, 0.2);
+  border-radius: 4px;
+}
+
+/* Message bubbles */
+.student-chat__msg {
+  display: flex;
+  gap: 8px;
+  max-width: 88%;
+  animation: msgSlide 0.25s ease-out;
+}
+
+.student-chat__msg--user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.student-chat__msg--bot {
+  align-self: flex-start;
+}
+
+.student-chat__bubble {
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.student-chat__msg--user .student-chat__bubble {
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.student-chat__msg--bot .student-chat__bubble {
+  background: var(--muted, #f4f4f5);
+  color: var(--foreground, #111);
+  border-bottom-left-radius: 4px;
+}
+
+/* ─── Confidence badge ─── */
+.student-chat__confidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.student-chat__confidence--high {
+  background: rgba(34, 197, 94, 0.12);
+  color: #16a34a;
+}
+
+.student-chat__confidence--medium {
+  background: rgba(234, 179, 8, 0.12);
+  color: #ca8a04;
+}
+
+.student-chat__confidence--low {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+}
+
+.student-chat__token-cost {
+  font-size: 10px;
+  color: var(--muted-foreground, #999);
+  margin-top: 2px;
+}
+
+/* ─── Quick actions ─── */
+.student-chat__quick-actions {
+  display: flex;
+  gap: 6px;
+  padding: 8px 16px;
+  overflow-x: auto;
+  flex-shrink: 0;
+  border-top: 1px solid rgba(34, 197, 94, 0.08);
+  background: var(--card, #fff);
+}
+
+.student-chat__quick-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  background: rgba(34, 197, 94, 0.04);
+  font-size: 12px;
+  font-weight: 500;
+  color: #16a34a;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.student-chat__quick-btn:hover {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: #22c55e;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.15);
+}
+
+/* ─── Input area ─── */
+.student-chat__input-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  background: var(--card, #fff);
+  flex-shrink: 0;
+}
+
+.student-chat__input {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  font-size: 13px;
+  background: var(--background, #fafafa);
+  color: var(--foreground, #111);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.student-chat__input:focus {
+  border-color: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
+}
+
+.student-chat__send-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.student-chat__send-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+}
+
+.student-chat__send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ─── Mic button ─── */
+.student-chat__mic-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: var(--background, #fafafa);
+  color: var(--foreground, #666);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.student-chat__mic-btn:hover {
+  border-color: #22c55e;
+  color: #16a34a;
+}
+
+.student-chat__mic-btn--recording {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #ef4444;
+  animation: micPulse 1.2s infinite;
+}
+
+/* ─── Typing indicator ─── */
+.student-chat__typing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--muted, #f4f4f5);
+  border-radius: 14px;
+  border-bottom-left-radius: 4px;
+  max-width: 100px;
+}
+
+.student-chat__typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #16a34a;
+  animation: typingBounce 1.4s infinite ease-in-out;
+}
+
+.student-chat__typing-dot:nth-child(2) { animation-delay: 0.16s; }
+.student-chat__typing-dot:nth-child(3) { animation-delay: 0.32s; }
+
+/* ─── Quiz card ─── */
+.student-chat__quiz {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.06), rgba(59, 130, 246, 0.06));
+  border: 1px solid rgba(34, 197, 94, 0.15);
+  border-radius: 12px;
+  padding: 14px;
+  margin-top: 6px;
+}
+
+.student-chat__quiz h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #16a34a;
+}
+
+.student-chat__quiz-question {
+  margin-bottom: 12px;
+}
+
+.student-chat__quiz-question p {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.student-chat__quiz-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  margin: 3px 0;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--card, #fff);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.student-chat__quiz-option:hover {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.04);
+}
+
+.student-chat__quiz-option--correct {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.student-chat__quiz-option--wrong {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.06);
+  color: #dc2626;
+}
+
+/* ─── Animations ─── */
+@keyframes msgSlide {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes typingBounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes micPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+  50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 768px) {
+  .student-chat {
+    height: 420px;
+    border-radius: 12px;
+  }
+}

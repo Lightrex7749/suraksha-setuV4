@@ -5,8 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, Alert, IncidentLog
-from alert_safeguards import retraction_service
-from notifications import send_notification
+from notifications import ws_manager
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,40 +31,25 @@ class AlertApprovalRequest(BaseModel):
 @router.post("/alerts/retract")
 async def retract_alert(request: RetractionRequest, db = Depends(get_db)):
     """
-    Retract an alert and send correction messages.
-    
-    **One-Click Retraction Workflow:**
+    Retract an alert using the full safety pipeline:
     1. Mark alert as retracted in DB
-    2. Log incident
-    3. Send SMS/push correction messages
-    4. Return retraction message template
+    2. Log incident (incident_logs table)
+    3. Record false positive for auto-disable tracking
+    4. Send correction via WebSocket + Push
     """
-    try:
-        result = await retraction_service.retract_alert(
-            alert_id=request.alert_id,
-            reason=request.reason
-        )
-        
-        if not result["success"]:
-            raise HTTPException(status_code=404, detail=result.get("error"))
-        
-        # Send correction notification to all affected users
-        correction_message = result["retraction_message"]
-        
-        # TODO: Get affected users from alert's geo-fence
-        # For now, this would integrate with notifications.py
-        logger.info(f"📤 Retraction notification sent for alert {request.alert_id}")
-        
-        return {
-            "success": True,
-            "alert_id": request.alert_id,
-            "message": "Alert retracted successfully",
-            "correction_template": correction_message
-        }
-    
-    except Exception as e:
-        logger.error(f"❌ Retraction failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    from alert_safety import retraction_service, AlertDecisionEngine
+
+    result = await retraction_service.retract_alert(
+        alert_id=request.alert_id,
+        reason=request.reason,
+        admin_user_id=request.admin_user_id or "admin",
+    )
+
+    if not result["success"]:
+        raise HTTPException(status_code=404 if "not found" in result.get("error", "") else 500,
+                            detail=result.get("error", "Retraction failed"))
+
+    return result
 
 
 @router.post("/alerts/approve")
@@ -73,6 +57,8 @@ async def approve_pending_alert(request: AlertApprovalRequest, db = Depends(get_
     """
     Approve or reject a pending alert (human-in-the-loop for medium confidence).
     """
+    from alert_safety import AlertDecisionEngine
+
     alert = await db.get(Alert, request.alert_id)
     
     if not alert:
@@ -82,8 +68,7 @@ async def approve_pending_alert(request: AlertApprovalRequest, db = Depends(get_
         alert.is_active = True
         await db.commit()
         
-        # Send notifications
-        logger.info(f"✅ Admin approved alert {request.alert_id}")
+        logger.info(f"Admin approved alert {request.alert_id}")
         
         return {
             "success": True,
@@ -92,14 +77,15 @@ async def approve_pending_alert(request: AlertApprovalRequest, db = Depends(get_
             "message": "Alert activated and notifications sent"
         }
     else:
-        # Reject and mark as false positive
         alert.is_active = False
         alert.retracted = True
         alert.retraction_reason = "Rejected by admin during review"
-        
         await db.commit()
+
+        # Record as false positive
+        AlertDecisionEngine.record_false_positive(alert.alert_type)
         
-        logger.info(f"❌ Admin rejected alert {request.alert_id}")
+        logger.info(f"Admin rejected alert {request.alert_id}")
         
         return {
             "success": True,
@@ -112,26 +98,35 @@ async def approve_pending_alert(request: AlertApprovalRequest, db = Depends(get_
 @router.get("/incidents")
 async def get_incident_logs(limit: int = 50, db = Depends(get_db)):
     """Get recent incident logs (retractions, false positives)."""
-    from sqlalchemy import select
-    
-    query = select(IncidentLog).order_by(IncidentLog.created_at.desc()).limit(limit)
-    result = await db.execute(query)
-    incidents = result.scalars().all()
-    
+    from alert_safety import retraction_service
+
+    logs = await retraction_service.get_incident_logs(limit=limit)
+    return {"total": len(logs), "incidents": logs}
+
+
+@router.get("/safety/status")
+async def get_safety_status():
+    """Get current alert safety engine status (rate limits, disabled types, false positive counts)."""
+    from alert_safety import AlertDecisionEngine
+
     return {
-        "total": len(incidents),
-        "incidents": [
-            {
-                "id": i.id,
-                "alert_id": i.alert_id,
-                "incident_type": i.incident_type,
-                "reason": i.reason,
-                "corrective_action": i.corrective_action,
-                "created_at": i.created_at.isoformat()
-            }
-            for i in incidents
-        ]
+        "false_positive_counts": dict(AlertDecisionEngine._false_positive_count),
+        "auto_disabled_types": [
+            t for t in AlertDecisionEngine._false_positive_count
+            if AlertDecisionEngine._is_auto_disabled(t)
+        ],
+        "max_alerts_per_hour": AlertDecisionEngine.MAX_ALERTS_PER_HOUR,
+        "false_positive_threshold": AlertDecisionEngine.FALSE_POSITIVE_THRESHOLD,
     }
+
+
+@router.post("/safety/reset/{event_type}")
+async def reset_false_positives(event_type: str):
+    """Admin reset of false positive counter to re-enable auto-alerting."""
+    from alert_safety import AlertDecisionEngine
+
+    AlertDecisionEngine.reset_false_positives(event_type)
+    return {"success": True, "event_type": event_type, "message": f"False positives reset for {event_type}"}
 
 
 @router.get("/alerts/pending")

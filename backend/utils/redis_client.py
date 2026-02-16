@@ -22,7 +22,7 @@ class RedisClient:
             if ping:
                 logger.info("Redis Connected Successfully")
         except Exception as e:
-            logger.error(f"Redis Connection Failed: {e}")
+            logger.warning(f"Redis Connection Failed: {e}")
             self.client = None
 
     async def close(self):

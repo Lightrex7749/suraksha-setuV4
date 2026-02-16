@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { auth, loginWithEmail, loginWithGoogle, registerWithEmail, logout as firebaseLogout, isFirebaseConfigured } from '../config/firebase';
+import { auth, loginWithEmail, loginWithGoogle, registerWithEmail, logout as firebaseLogout, isFirebaseConfigured, saveUserProfile, getUserProfile } from '../config/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 const AuthContext = createContext(null);
@@ -153,7 +153,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (email, password, displayName, role = 'citizen') => {
+  const register = async (email, password, displayName, role = 'citizen', phone = '') => {
     if (!firebaseReady || !auth) {
       throw new Error('Firebase authentication is not configured. Please check your Firebase setup.');
     }
@@ -166,14 +166,41 @@ export const AuthProvider = ({ children }) => {
       // Determine role: admin if specific email, otherwise use selected role
       const userRole = firebaseUser.email === ADMIN_EMAIL ? 'admin' : role;
 
+      // Normalize phone number
+      const normalizedPhone = phone.replace(/[\s\-]/g, '');
+      const phoneWithCode = normalizedPhone.startsWith('+91') ? normalizedPhone : `+91${normalizedPhone}`;
+
       const userData = {
         id: firebaseUser.uid,
         email: firebaseUser.email,
         name: displayName || email.split('@')[0],
         photoURL: firebaseUser.photoURL,
         role: userRole,
+        phone: phoneWithCode,
         emailVerified: firebaseUser.emailVerified
       };
+
+      // Save user profile with phone to Firestore
+      await saveUserProfile(firebaseUser.uid, {
+        email: firebaseUser.email,
+        name: displayName || email.split('@')[0],
+        role: userRole,
+        phone: phoneWithCode,
+        smsAlerts: true,
+        createdAt: new Date().toISOString(),
+      });
+
+      // Also register phone on backend for SMS alerts
+      try {
+        const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+        await fetch(`${API_URL}/api/users/register-phone`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+          body: JSON.stringify({ uid: firebaseUser.uid, phone: phoneWithCode, email: firebaseUser.email, name: displayName }),
+        });
+      } catch (backendErr) {
+        console.warn('Backend phone registration deferred:', backendErr.message);
+      }
 
       // Store with expiry
       const expiryTime = Date.now() + (60 * 60 * 1000); // 1 hour

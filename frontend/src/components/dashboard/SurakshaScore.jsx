@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { motion } from 'framer-motion';
-import { ShieldCheck, ShieldAlert, Shield, MapPin, AlertTriangle, CloudRain, TrendingUp, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Shield, MapPin, AlertTriangle, CloudRain, TrendingUp, Info, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
 import { useLocation } from '@/contexts/LocationContext';
 import { useTranslation } from 'react-i18next';
 import api from '@/utils/api';
@@ -158,7 +158,7 @@ const SurakshaScore = ({ score: initialScore = 85 }) => {
             className="mt-6 space-y-4 border-t border-border pt-4"
           >
             <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <BarChart className="w-4 h-4" />
+              <BarChart3 className="w-4 h-4" />
               Score Breakdown
             </h4>
             

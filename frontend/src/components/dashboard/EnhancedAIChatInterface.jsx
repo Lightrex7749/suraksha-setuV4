@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  MessageCircle, Send, Mic, MicOff, Loader2, Sparkles, 
+import {
+  MessageCircle, Send, Mic, MicOff, Loader2, Sparkles,
   Bot, User, Volume2, VolumeX, Zap, Brain, TrendingUp, X, Minimize2, Maximize2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import AIInput from '@/components/ui/ai-input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -19,7 +20,7 @@ const EnhancedAIChatInterface = () => {
     {
       id: 1,
       type: 'bot',
-      text: '👋 **Namaste!** I\'m Suraksha AI, your intelligent disaster safety assistant powered by ChatGPT.\n\n🔹 **Real-time weather** & **air quality** updates\n🔹 **Emergency preparedness** & safety tips\n🔹 **Live disaster alerts** in your area\n🔹 **Safety guidance** for natural disasters\n\n🎤 **Voice Mode:** Click the voice button for hands-free conversation in ANY language!\n\nHow can I help you stay safe today?',
+      text: '👋 **Namaste!** I\'m Suraksha AI, your intelligent disaster safety assistant.\n\n🔹 **Real-time weather** & **air quality** updates\n🔹 **Emergency preparedness** & safety tips\n🔹 **Live disaster alerts** in your area\n🔹 **Safety guidance** for natural disasters\n\n🎤 **Voice Mode:** Click the voice button for hands-free conversation in ANY language!\n\nHow can I help you stay safe today?',
       timestamp: new Date(),
     },
   ]);
@@ -60,7 +61,7 @@ const EnhancedAIChatInterface = () => {
         const voices = window.speechSynthesis.getVoices();
         console.log(`Loaded ${voices.length} voices for TTS`);
       };
-      
+
       // Chrome loads voices asynchronously
       if (window.speechSynthesis.onvoiceschanged !== undefined) {
         window.speechSynthesis.onvoiceschanged = loadVoices;
@@ -84,10 +85,11 @@ const EnhancedAIChatInterface = () => {
     setIsLoading(true);
 
     try {
-      const response = await axios.post(`${API_URL}/chat`, {
+      const response = await axios.post(`${API_URL}/ai/chat`, {
         message: userMessage.text,
-        context: 'dashboard',
-        language: 'en-IN'
+        query: userMessage.text,
+        role: 'citizen',
+        context: { domain: 'dashboard', language: 'en-IN' },
       });
 
       const botMessage = {
@@ -99,7 +101,7 @@ const EnhancedAIChatInterface = () => {
       };
 
       setMessages((prev) => [...prev, botMessage]);
-      
+
       // Auto-speak response if speech synthesis is available
       if ('speechSynthesis' in window && response.data.response) {
         speakText(response.data.response);
@@ -157,7 +159,7 @@ const EnhancedAIChatInterface = () => {
 
   const sendVoiceMessage = async (audioBlob) => {
     setIsLoading(true);
-    
+
     const userMessage = {
       id: Date.now(),
       type: 'user',
@@ -169,19 +171,19 @@ const EnhancedAIChatInterface = () => {
 
     try {
       const formData = new FormData();
-      formData.append('audio_file', audioBlob, 'voice.webm');
+      formData.append('file', audioBlob, 'voice.webm');
 
-      const response = await axios.post(`${API_URL}/voice/chat`, formData, {
+      const response = await axios.post(`${API_URL}/ai/voice`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
 
       // Update user message with transcription
-      setMessages((prev) => 
-        prev.map(msg => 
-          msg.id === userMessage.id 
-            ? { ...msg, text: response.data.transcription }
+      setMessages((prev) =>
+        prev.map(msg =>
+          msg.id === userMessage.id
+            ? { ...msg, text: response.data.transcript || '🎤 Voice message' }
             : msg
         )
       );
@@ -195,10 +197,10 @@ const EnhancedAIChatInterface = () => {
       };
 
       setMessages((prev) => [...prev, botMessage]);
-      
+
       // Speak the response
       speakText(response.data.response);
-      
+
       // Voice processed
     } catch (error) {
       console.error('Error processing voice:', error);
@@ -230,40 +232,40 @@ const EnhancedAIChatInterface = () => {
         .substring(0, 500);     // Limit length
 
       const utterance = new SpeechSynthesisUtterance(cleanText);
-      
+
       // Use detected language or default to Indian English
       const lang = languageCode || detectedLanguage || 'en-IN';
       utterance.lang = lang;
-      
+
       // Adjust speech parameters for better naturalness
       utterance.rate = 0.95;   // Slightly slower for clarity
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
-      
+
       // Try to select best voice for the language
       const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(voice => 
-        voice.lang.startsWith(lang.split('-')[0]) && 
+      const preferredVoice = voices.find(voice =>
+        voice.lang.startsWith(lang.split('-')[0]) &&
         (voice.lang.includes('IN') || voice.name.includes('India'))
       );
-      
+
       if (preferredVoice) {
         utterance.voice = preferredVoice;
         console.log(`Using voice: ${preferredVoice.name} (${preferredVoice.lang})`);
       } else {
         console.log(`Using default voice for ${lang}`);
       }
-      
+
       utterance.onstart = () => {
         setIsSpeaking(true);
         console.log(`Speaking in ${lang}...`);
       };
-      
+
       utterance.onend = () => {
         setIsSpeaking(false);
         resolve();
       };
-      
+
       utterance.onerror = (error) => {
         console.error('Speech synthesis error:', error);
         setIsSpeaking(false);
@@ -312,7 +314,7 @@ const EnhancedAIChatInterface = () => {
             }
             return part;
           });
-          
+
           return (
             <span key={i}>
               {formatted}
@@ -337,11 +339,10 @@ const EnhancedAIChatInterface = () => {
         </Avatar>
         <div className={`flex-1 max-w-[85%] md:max-w-[75%] ${isBot ? '' : 'flex flex-col items-end'}`}>
           <div
-            className={`rounded-2xl px-4 py-2.5 shadow-sm ${
-              isBot
-                ? 'bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 text-foreground border border-gray-200 dark:border-gray-700'
-                : 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-md'
-            }`}
+            className={`rounded-2xl px-4 py-2.5 shadow-sm ${isBot
+              ? 'bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 text-foreground border border-gray-200 dark:border-gray-700'
+              : 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-md'
+              }`}
           >
             <div className={`text-[13px] leading-relaxed ${isBot ? 'space-y-1' : ''}`}>
               {isBot ? formatText(message.text) : <span className="font-medium">{message.text}</span>}
@@ -377,7 +378,7 @@ const EnhancedAIChatInterface = () => {
         <div className="absolute inset-0 opacity-10">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.1),transparent_50%)]"></div>
         </div>
-        
+
         <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-3">
             {/* Animated AI Avatar */}
@@ -392,7 +393,7 @@ const EnhancedAIChatInterface = () => {
                 Suraksha AI
                 <Badge className="bg-white/20 text-white border-white/30 text-[10px] px-1.5 py-0 h-4 backdrop-blur-sm">
                   <Zap className="w-2.5 h-2.5 mr-0.5" />
-                  GPT-4
+                  Premium
                 </Badge>
               </CardTitle>
               <p className="text-[11px] text-white/80 font-medium">Your Intelligent Safety Assistant</p>
@@ -413,11 +414,10 @@ const EnhancedAIChatInterface = () => {
                   if (isRecording) stopRecording();
                 }
               }}
-              className={`h-8 w-8 rounded-lg transition-all ${
-                voiceMode 
-                  ? 'bg-green-500/30 text-white hover:bg-green-500/40 ring-2 ring-green-400/50 animate-pulse' 
-                  : 'text-white hover:bg-white/20'
-              }`}
+              className={`h-8 w-8 rounded-lg transition-all ${voiceMode
+                ? 'bg-green-500/30 text-white hover:bg-green-500/40 ring-2 ring-green-400/50 animate-pulse'
+                : 'text-white hover:bg-white/20'
+                }`}
               title={voiceMode ? "Voice Mode: ON" : "Voice Mode: OFF"}
             >
               <Volume2 className="h-4 w-4" />
@@ -500,86 +500,24 @@ const EnhancedAIChatInterface = () => {
           </div>
         </ScrollArea>
 
-        {/* Redesigned Input Area */}
-        <div className="p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 shrink-0">
-          <div className="flex gap-2 items-end">
-            <div className="relative flex-1">
-              <textarea
-                ref={inputRef}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Ask me anything about disasters, weather, or safety..."
-                disabled={isLoading || isRecording}
-                rows={1}
-                className="w-full px-4 py-3 pr-3 rounded-2xl border-2 border-gray-200 dark:border-gray-700 focus:border-purple-400 dark:focus:border-purple-600 focus:ring-2 focus:ring-purple-100 dark:focus:ring-purple-900/30 focus:outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed resize-none bg-gray-50 dark:bg-gray-800 text-sm"
-                style={{ maxHeight: '120px', minHeight: '48px' }}
-              />
-              {isRecording && (
-                <motion.div 
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  className="absolute right-3 top-3"
-                >
-                  <div className="flex items-center gap-2 bg-red-500 text-white px-2 py-1 rounded-full text-[10px] font-semibold">
-                    <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                    Recording
-                  </div>
-                </motion.div>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={isRecording ? stopRecording : startRecording}
-                disabled={isLoading}
-                size="icon"
-                className={`h-12 w-12 rounded-xl shadow-md transition-all relative ${
-                  isRecording 
-                    ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
-                    : voiceMode
-                    ? 'bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 ring-2 ring-green-400/50'
-                    : 'bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
-                }`}
-                title={voiceMode ? "Voice Mode: Continuous Conversation" : "Voice Input"}
-              >
-                {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-                {voiceMode && !isRecording && (
-                  <span className="absolute -top-1 -right-1 h-3 w-3 bg-green-400 rounded-full border-2 border-white animate-pulse"></span>
-                )}
-              </Button>
-              <Button
-                onClick={handleSendMessage}
-                disabled={!inputValue.trim() || isLoading || isRecording}
-                size="icon"
-                className="h-12 w-12 rounded-xl shadow-md bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                {isLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <Send className="h-5 w-5" />
-                )}
-              </Button>
-            </div>
-          </div>
-          
-          {/* Helper Text with Voice Mode Status */}
-          <div className="flex items-center justify-between mt-2">
-            <p className="text-[10px] text-muted-foreground">
-              {voiceMode ? (
-                <span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-semibold">
-                  <Volume2 className="h-3 w-3 animate-pulse" />
-                  Voice Mode Active • Language: {detectedLanguage}
-                </span>
-              ) : (
-                <span>Powered by ChatGPT & Whisper • Press Enter to send</span>
-              )}
+        {/* Premium Input Area */}
+        <div className="p-4 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm border-t border-gray-200/50 dark:border-gray-800/50 shrink-0">
+          <AIInput
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onSubmit={handleSendMessage}
+            onMicClick={isRecording ? stopRecording : startRecording}
+            isRecording={isRecording}
+            isLoading={isLoading}
+            placeholder="Ask Suraksha AI..."
+            disabled={isLoading}
+          />
+          {/* Minimal Footer */}
+          <div className="flex justify-center mt-2">
+            <p className="text-[10px] text-gray-400 dark:text-gray-600 flex items-center gap-1.5 opacity-70 hover:opacity-100 transition-opacity cursor-default">
+              <Sparkles className="w-3 h-3 text-purple-400" />
+              <span>AI can make mistakes. Check important info.</span>
             </p>
-            {voiceMode && (
-              <Badge variant="secondary" className="text-[10px] px-2 py-0.5 h-5 bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30">
-                <Mic className="h-2.5 w-2.5 mr-1" />
-                Continuous
-              </Badge>
-            )}
           </div>
         </div>
       </CardContent>

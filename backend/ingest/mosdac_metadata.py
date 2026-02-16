@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import aiohttp
 from database import AsyncSessionLocal, MOSDACMetadata
 import os
+from sqlalchemy import text, select
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +101,8 @@ class MOSDACMetadataPoller:
         async with AsyncSessionLocal() as db:
             for record in metadata_records:
                 # Check if already exists
-                existing = await db.execute(
-                    f"SELECT id FROM mosdac_metadata WHERE product_id = '{record['product_id']}'"
-                )
+                stmt = select(MOSDACMetadata).where(MOSDACMetadata.product_id == record['product_id'])
+                existing = await db.execute(stmt)
                 if existing.first():
                     continue
                 

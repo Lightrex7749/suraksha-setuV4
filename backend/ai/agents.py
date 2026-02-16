@@ -9,7 +9,8 @@ from ai.openai_client import ai_client, MODEL_MINI, MODEL_HEAVY
 from ai.prompts import PROMPTS
 from ai.tools import (
     PLAYBOOK_SCHEMA, DB_QUERY_SCHEMA, NOTIFICATION_SCHEMA,
-    MOSDAC_DOWNLOAD_SCHEMA, PUBLISH_ADVISORY_SCHEMA,
+    MOSDAC_DOWNLOAD_SCHEMA, PUBLISH_ADVISORY_SCHEMA, QUIZ_SCHEMA,
+    FLOOD_REPORT_SCHEMA, CYCLONE_REPORT_SCHEMA, SATELLITE_SEARCH_SCHEMA,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,13 @@ class BaseAgent:
     temperature: float = 0.7
     max_tokens: int = 600
     tool_schemas: List[Dict] = []
+
+    @property
+    def tools(self) -> Optional[List[Dict]]:
+        """Return tool_schemas wrapped in OpenAI function-calling format."""
+        if not self.tool_schemas:
+            return None
+        return [{"type": "function", "function": s} for s in self.tool_schemas]
 
     def system_prompt(self, context: dict = None) -> str:
         return PROMPTS.get(self.name, PROMPTS["citizen"])
@@ -45,11 +53,12 @@ class CitizenAgent(BaseAgent):
     Safety-focused agent for citizens.
     Injects playbook actions into context for authoritative responses.
     Lower temperature for consistency.
+    Has access to satellite data search for farmers requesting MOSDAC data.
     """
     name = "citizen"
     temperature = 0.3
     max_tokens = 500
-    tool_schemas = [PLAYBOOK_SCHEMA, DB_QUERY_SCHEMA]
+    tool_schemas = [PLAYBOOK_SCHEMA, DB_QUERY_SCHEMA, SATELLITE_SEARCH_SCHEMA]
 
     def system_prompt(self, context: dict = None) -> str:
         base = PROMPTS["citizen"]
@@ -71,19 +80,23 @@ class StudentAgent(BaseAgent):
     name = "student"
     temperature = 0.8
     max_tokens = 600
-    tool_schemas = [PLAYBOOK_SCHEMA]
+    tool_schemas = [PLAYBOOK_SCHEMA, QUIZ_SCHEMA]
 
 
 class ScientistAgent(BaseAgent):
     """
     Data-driven agent for researchers and authorities.
     Uses heavy model and RAG retrieval for context-rich answers.
+    Has access to MOSDAC satellite data tools for flood/cyclone reports.
     """
     name = "scientist"
     model = MODEL_HEAVY
     temperature = 0.4
     max_tokens = 1000
-    tool_schemas = [DB_QUERY_SCHEMA, MOSDAC_DOWNLOAD_SCHEMA, PUBLISH_ADVISORY_SCHEMA]
+    tool_schemas = [
+        DB_QUERY_SCHEMA, MOSDAC_DOWNLOAD_SCHEMA, PUBLISH_ADVISORY_SCHEMA,
+        FLOOD_REPORT_SCHEMA, CYCLONE_REPORT_SCHEMA, SATELLITE_SEARCH_SCHEMA,
+    ]
 
     def system_prompt(self, context: dict = None) -> str:
         base = PROMPTS["scientist"]
@@ -108,7 +121,8 @@ class ScientistAgent(BaseAgent):
 class AdminAgent(BaseAgent):
     """
     Admin/authority agent with full tool access.
-    Can trigger notifications, publish advisories, download satellite data.
+    Can trigger notifications, publish advisories, download satellite data,
+    generate reports. AI explains — never triggers alerts.
     """
     name = "scientist"  # reuses scientist prompt, full tool access
     model = MODEL_HEAVY
@@ -117,6 +131,7 @@ class AdminAgent(BaseAgent):
     tool_schemas = [
         DB_QUERY_SCHEMA, NOTIFICATION_SCHEMA, PLAYBOOK_SCHEMA,
         MOSDAC_DOWNLOAD_SCHEMA, PUBLISH_ADVISORY_SCHEMA,
+        FLOOD_REPORT_SCHEMA, CYCLONE_REPORT_SCHEMA, SATELLITE_SEARCH_SCHEMA,
     ]
 
 

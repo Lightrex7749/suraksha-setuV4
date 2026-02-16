@@ -60,14 +60,16 @@ const Chatbot = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/ai-assistant`, {
+      const response = await fetch(`${API_URL}/ai/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          message: userMessage.text,
           query: userMessage.text,
-          context: 'disaster management and safety',
+          role: 'citizen',
+          context: { domain: 'disaster management and safety' },
         }),
       });
 
@@ -192,16 +194,14 @@ const Chatbot = () => {
                   {messages.map((message) => (
                     <div
                       key={message.id}
-                      className={`flex gap-3 ${
-                        message.type === 'user' ? 'flex-row-reverse' : 'flex-row'
-                      }`}
+                      className={`flex gap-3 ${message.type === 'user' ? 'flex-row-reverse' : 'flex-row'
+                        }`}
                     >
                       <Avatar
-                        className={`h-8 w-8 ${
-                          message.type === 'user'
+                        className={`h-8 w-8 ${message.type === 'user'
                             ? 'bg-primary text-primary-foreground'
                             : 'bg-muted'
-                        }`}
+                          }`}
                       >
                         <AvatarFallback>
                           {message.type === 'user' ? (
@@ -212,16 +212,14 @@ const Chatbot = () => {
                         </AvatarFallback>
                       </Avatar>
                       <div
-                        className={`flex flex-col gap-1 max-w-[75%] ${
-                          message.type === 'user' ? 'items-end' : 'items-start'
-                        }`}
+                        className={`flex flex-col gap-1 max-w-[75%] ${message.type === 'user' ? 'items-end' : 'items-start'
+                          }`}
                       >
                         <div
-                          className={`px-4 py-2 rounded-2xl ${
-                            message.type === 'user'
+                          className={`px-4 py-2 rounded-2xl ${message.type === 'user'
                               ? 'bg-primary text-primary-foreground rounded-tr-none'
                               : 'bg-muted text-foreground rounded-tl-none'
-                          }`}
+                            }`}
                         >
                           {message.type === 'user' ? (
                             <p className="text-sm whitespace-pre-wrap break-words">

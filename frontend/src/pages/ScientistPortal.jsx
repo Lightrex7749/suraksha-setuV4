@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from 'sonner';
 import DataExport from "@/components/scientist/DataExport";
+import ResearcherChat from "@/components/scientist/ResearcherChat";
 
 const ScientistPortal = () => {
   const [uploadingData, setUploadingData] = useState(false);
@@ -32,18 +33,18 @@ const ScientistPortal = () => {
     input.onchange = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      
+
       setUploadingData(true);
       const formData = new FormData();
       formData.append('file', file);
-      
+
       try {
         const response = await fetch('http://localhost:8000/api/scientist/upload-dataset', {
           method: 'POST',
           body: formData,
           credentials: 'include'
         });
-        
+
         if (response.ok) {
           toast.success(`Dataset "${file.name}" uploaded successfully`);
         } else {
@@ -73,7 +74,7 @@ const ScientistPortal = () => {
         }),
         credentials: 'include'
       });
-      
+
       if (response.ok) {
         const result = await response.json();
         toast.success(`Simulation completed: ${result.predictions_count} predictions generated`);
@@ -92,7 +93,7 @@ const ScientistPortal = () => {
       const response = await fetch(`http://localhost:8000/api/scientist/export-model/${modelId}`, {
         credentials: 'include'
       });
-      
+
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -115,17 +116,17 @@ const ScientistPortal = () => {
     input.onchange = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      
+
       const formData = new FormData();
       formData.append('file', file);
-      
+
       try {
         const response = await fetch('http://localhost:8000/api/scientist/import-model', {
           method: 'POST',
           body: formData,
           credentials: 'include'
         });
-        
+
         if (response.ok) {
           toast.success(`Model "${file.name}" imported successfully`);
         } else {
@@ -181,8 +182,8 @@ const ScientistPortal = () => {
           <p className="text-muted-foreground">Advanced data analysis, modeling, and prediction tools.</p>
         </div>
         <div className="flex gap-2">
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             className="gap-2"
             onClick={handleUploadDataset}
             disabled={uploadingData}
@@ -194,7 +195,7 @@ const ScientistPortal = () => {
             )}
             {uploadingData ? 'Uploading...' : 'Upload Dataset'}
           </Button>
-          <Button 
+          <Button
             className="gap-2"
             onClick={handleRunSimulation}
             disabled={runningSimulation}
@@ -212,6 +213,7 @@ const ScientistPortal = () => {
       <Tabs defaultValue="analysis" className="w-full">
         <TabsList className="mb-6">
           <TabsTrigger value="analysis">Data Analysis</TabsTrigger>
+          <TabsTrigger value="assistant">AI Assistant</TabsTrigger>
           <TabsTrigger value="models">Predictive Models</TabsTrigger>
           <TabsTrigger value="simulation">Raw Simulation</TabsTrigger>
           <TabsTrigger value="reports">Research Reports</TabsTrigger>
@@ -292,10 +294,31 @@ const ScientistPortal = () => {
           </div>
         </TabsContent>
 
+        <TabsContent value="assistant" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <ResearcherChat />
+            </div>
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Quick Tips</CardTitle>
+                </CardHeader>
+                <CardContent className="text-xs text-muted-foreground space-y-2">
+                  <p>• Enable <strong>RAG mode</strong> for document-grounded answers with source citations.</p>
+                  <p>• Switch to <strong>Detailed (CSV)</strong> for exportable tabular data.</p>
+                  <p>• Ask for "trend analysis" or "anomaly detection" for structured reports.</p>
+                  <p>• Vigyan Drishti uses NDMA, IMD, and CPCB data sources.</p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
         <TabsContent value="models">
           <div className="mb-6 flex justify-end">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="gap-2"
               onClick={handleImportModel}
             >
@@ -303,10 +326,10 @@ const ScientistPortal = () => {
               Import Model
             </Button>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
             {models.map((model) => (
-              <Card 
+              <Card
                 key={model.id}
                 className="hover:border-primary/50 transition-colors cursor-pointer"
                 onClick={() => setSelectedModel(model.id)}
@@ -322,11 +345,10 @@ const ScientistPortal = () => {
                   <p className="text-sm text-muted-foreground mb-4">{model.description}</p>
                   <div className="flex justify-between items-center text-sm mb-4">
                     <span className="font-medium">Accuracy: {model.accuracy}%</span>
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      model.status === 'active' 
-                        ? 'bg-green-100 text-green-700' 
-                        : 'bg-yellow-100 text-yellow-700'
-                    }`}>
+                    <span className={`px-2 py-1 rounded text-xs ${model.status === 'active'
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-yellow-100 text-yellow-700'
+                      }`}>
                       {model.status === 'active' ? (
                         <><CheckCircle className="w-3 h-3 inline mr-1" />Active</>
                       ) : (
@@ -339,8 +361,8 @@ const ScientistPortal = () => {
                       <Play className="w-4 h-4 mr-1" />
                       Run Model
                     </Button>
-                    <Button 
-                      size="sm" 
+                    <Button
+                      size="sm"
                       variant="outline"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -388,9 +410,9 @@ const ScientistPortal = () => {
                     </div>
                     <div>
                       <label className="text-sm font-medium mb-2 block">Time Steps</label>
-                      <input 
-                        type="number" 
-                        defaultValue={100} 
+                      <input
+                        type="number"
+                        defaultValue={100}
                         className="w-full p-2 border rounded"
                         min="10"
                         max="1000"
@@ -398,7 +420,7 @@ const ScientistPortal = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 <div>
                   <h3 className="font-semibold mb-3">Data Sources</h3>
                   <div className="space-y-2">
@@ -421,10 +443,10 @@ const ScientistPortal = () => {
                   </div>
                 </div>
               </div>
-              
+
               <div className="mt-6 pt-6 border-t">
-                <Button 
-                  className="w-full" 
+                <Button
+                  className="w-full"
                   size="lg"
                   onClick={handleRunSimulation}
                   disabled={runningSimulation}
@@ -533,7 +555,7 @@ const ScientistPortal = () => {
           <DataExport />
         </TabsContent>
       </Tabs>
-    </div>
+    </div >
   );
 };
 

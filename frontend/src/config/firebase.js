@@ -10,6 +10,7 @@ import {
   sendPasswordResetEmail,
   updateProfile
 } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -45,9 +46,32 @@ if (!app) {
 
 // Initialize Firebase Authentication and get a reference to the service
 export const auth = getAuth(app);
+export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
 export { analytics };
 export const isFirebaseConfigured = !!app && !initError;
+
+// Firestore helper: save user profile with phone number
+export const saveUserProfile = async (uid, profileData) => {
+  try {
+    await setDoc(doc(db, 'users', uid), profileData, { merge: true });
+    console.log('User profile saved to Firestore');
+  } catch (error) {
+    console.error('Error saving user profile:', error);
+    throw error;
+  }
+};
+
+// Firestore helper: get user profile
+export const getUserProfile = async (uid) => {
+  try {
+    const docSnap = await getDoc(doc(db, 'users', uid));
+    return docSnap.exists() ? docSnap.data() : null;
+  } catch (error) {
+    console.error('Error getting user profile:', error);
+    return null;
+  }
+};
 
 // Authentication functions
 export const registerWithEmail = async (email, password, displayName) => {
