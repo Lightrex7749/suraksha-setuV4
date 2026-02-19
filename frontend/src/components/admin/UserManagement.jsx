@@ -44,7 +44,7 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { motion } from 'framer-motion';
 
-const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
+const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000');
 
 const SAMPLE_USERS = [
   {
@@ -209,7 +209,7 @@ const UserManagement = () => {
     try {
       // Try backend delete
       try {
-        await axios.delete(`${API_URL}/admin/users/${selectedUser.id}`);
+        await axios.delete(`${API_URL}/admin/users/${selectedUser.id}`);  
       } catch (error) {
         console.log('Backend delete not available, deleting locally');
       }

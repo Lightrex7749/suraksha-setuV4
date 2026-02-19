@@ -104,18 +104,45 @@ const createAQIIcon = (aqi, category) => {
   });
 };
 
+// Custom alert marker icon
+const createAlertIcon = (severity) => {
+  const color = severity === 'critical' || severity === 'red' ? '#EF4444'
+    : severity === 'warning' || severity === 'orange' ? '#F59E0B'
+    : '#3B82F6';
+  return L.divIcon({
+    className: 'custom-alert-marker',
+    html: `<div style="
+      background-color: ${color};
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 3px solid white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 16px;
+      color: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    ">!</div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+};
+
 // Component to recenter map
-function MapRecenter({ center }) {
+function MapRecenter({ center, searchRadius }) {
   const map = useMap();
   useEffect(() => {
     if (center) {
-      map.setView(center, 10);
+      const zoom = searchRadius ? 12 : 6;
+      map.setView(center, zoom);
     }
-  }, [center, map]);
+  }, [center, searchRadius, map]);
   return null;
 }
 
-const Map2D = ({ center, aqiStations, cycloneTrack, rainfallData, showLayers }) => {
+const Map2D = ({ center, aqiStations, cycloneTrack, rainfallData, showLayers, searchRadius, alerts }) => {
   const [mapCenter, setMapCenter] = useState(center || [20.5937, 78.9629]); // Default: India
 
   useEffect(() => {
@@ -131,7 +158,7 @@ const Map2D = ({ center, aqiStations, cycloneTrack, rainfallData, showLayers }) 
       style={{ height: '100%', width: '100%' }}
       className="rounded-lg"
     >
-      <MapRecenter center={mapCenter} />
+      <MapRecenter center={mapCenter} searchRadius={searchRadius} />
       
       {/* Base Map Layer */}
       <TileLayer
@@ -261,6 +288,48 @@ const Map2D = ({ center, aqiStations, cycloneTrack, rainfallData, showLayers }) 
           })}
         </>
       )}
+
+      {/* 10km Search Radius Circle */}
+      {searchRadius && center && (
+        <Circle
+          center={center}
+          radius={searchRadius}
+          pathOptions={{
+            color: '#3b82f6',
+            fillColor: '#3b82f6',
+            fillOpacity: 0.06,
+            weight: 2,
+            dashArray: '8, 4',
+          }}
+        >
+          <Popup>
+            <div className="text-sm">
+              <strong>Search Area</strong>
+              <br />
+              Radius: {(searchRadius / 1000).toFixed(0)} km
+            </div>
+          </Popup>
+        </Circle>
+      )}
+
+      {/* Alert Markers */}
+      {alerts && alerts.length > 0 && alerts.map((alert, index) => {
+        const lat = alert.coordinates?.lat || alert.position?.lat;
+        const lon = alert.coordinates?.lon || alert.coordinates?.lng || alert.position?.lng || alert.position?.lon;
+        if (!lat || !lon || isNaN(lat) || isNaN(lon)) return null;
+        return (
+          <Marker key={`alert-${alert.id || index}`} position={[lat, lon]} icon={createAlertIcon(alert.severity)}>
+            <Popup>
+              <div className="text-sm">
+                <strong>{alert.title || alert.type || 'Alert'}</strong>
+                <br />
+                {alert.severity && <><span style={{color: alert.severity === 'critical' ? '#EF4444' : '#F59E0B', fontWeight: 'bold'}}>{alert.severity}</span><br/></>}
+                {alert.description || alert.location || ''}
+              </div>
+            </Popup>
+          </Marker>
+        );
+      })}
     </MapContainer>
   );
 };

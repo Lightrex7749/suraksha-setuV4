@@ -1,7 +1,4 @@
-"""
-AI Agents – Role-specialised processors
-Each Agent has: system prompt, tools, model selection, and process() method.
-"""
+
 import logging
 from typing import Dict, Any, List, Optional
 

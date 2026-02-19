@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 # ── Simple in-memory cache for student common queries ──
 _query_cache: Dict[str, dict] = {}
-_CACHE_TTL_SECONDS = 300  # 5 minutes for student queries
-_MAX_CHAT_HISTORY = 3     # Send only last 2-3 messages to LLM
+_CACHE_TTL_SECONDS = 300  
+_MAX_CHAT_HISTORY = 3     
 
 
 def _cache_key(role: str, message: str) -> str:

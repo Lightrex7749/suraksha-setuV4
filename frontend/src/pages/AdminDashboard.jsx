@@ -31,7 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import UserManagement from "@/components/admin/UserManagement";
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -44,16 +44,20 @@ const AdminDashboard = () => {
   const [retractReason, setRetractReason] = useState('');
   const [retractingId, setRetractingId] = useState(null);
   const [actionFeedback, setActionFeedback] = useState('');
+  const [stats, setStats] = useState(null);
+  const [systemLogs, setSystemLogs] = useState([]);
 
   const fetchData = useCallback(async () => {
     try {
-      const [alertsRes, pendingRes, safetyRes, smsRes, incidentRes, smsLogRes] = await Promise.allSettled([
+      const [alertsRes, pendingRes, safetyRes, smsRes, incidentRes, smsLogRes, statsRes, logsRes] = await Promise.allSettled([
         fetch(`${API_URL}/api/alerts`).then(r => r.json()),
         fetch(`${API_URL}/admin/alerts/pending`).then(r => r.json()),
         fetch(`${API_URL}/admin/safety/status`).then(r => r.json()),
         fetch(`${API_URL}/api/sms/status`).then(r => r.json()),
         fetch(`${API_URL}/admin/incidents?limit=20`).then(r => r.json()),
         fetch(`${API_URL}/api/sms/audit-log?limit=20`).then(r => r.json()),
+        fetch(`${API_URL}/admin/stats`).then(r => r.json()),
+        fetch(`${API_URL}/admin/logs?limit=10`).then(r => r.json()),
       ]);
       if (alertsRes.status === 'fulfilled') setAlerts(alertsRes.value?.alerts || alertsRes.value || []);
       if (pendingRes.status === 'fulfilled') setPendingAlerts(pendingRes.value?.pending_alerts || []);
@@ -61,6 +65,8 @@ const AdminDashboard = () => {
       if (smsRes.status === 'fulfilled') setSmsStatus(smsRes.value);
       if (incidentRes.status === 'fulfilled') setIncidents(incidentRes.value?.incidents || []);
       if (smsLogRes.status === 'fulfilled') setSmsLogs(smsLogRes.value?.logs || []);
+      if (statsRes.status === 'fulfilled') setStats(statsRes.value);
+      if (logsRes.status === 'fulfilled') setSystemLogs(logsRes.value?.logs || []);
     } catch (err) {
       console.error('Admin fetch error:', err);
     }
@@ -150,7 +156,7 @@ const AdminDashboard = () => {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">System Status</p>
-              <h4 className="text-xl font-bold text-green-600">Operational</h4>
+              <h4 className="text-xl font-bold text-green-600">{stats?.system_status === 'operational' ? 'Operational' : 'Unknown'}</h4>
             </div>
           </CardContent>
         </Card>
@@ -161,7 +167,7 @@ const AdminDashboard = () => {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Active Users</p>
-              <h4 className="text-xl font-bold">1,240</h4>
+              <h4 className="text-xl font-bold">{stats?.active_users ?? 0}</h4>
             </div>
           </CardContent>
         </Card>
@@ -171,8 +177,8 @@ const AdminDashboard = () => {
               <AlertTriangle className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Pending Reports</p>
-              <h4 className="text-xl font-bold">15</h4>
+              <p className="text-sm text-muted-foreground">Pending Alerts</p>
+              <h4 className="text-xl font-bold">{stats?.pending_alerts ?? 0}</h4>
             </div>
           </CardContent>
         </Card>
@@ -183,107 +189,137 @@ const AdminDashboard = () => {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Active Alerts</p>
-              <h4 className="text-xl font-bold">3</h4>
+              <h4 className="text-xl font-bold">{stats?.active_alerts ?? 0}</h4>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Extra stats row */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="p-3 rounded-full bg-indigo-100 text-indigo-600">
+              <MessageSquare className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Community Posts</p>
+              <h4 className="text-xl font-bold">{stats?.total_posts ?? 0}</h4>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="p-3 rounded-full bg-teal-100 text-teal-600">
+              <Phone className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Registered Phones</p>
+              <h4 className="text-xl font-bold">{stats?.registered_phones ?? 0}</h4>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="p-3 rounded-full bg-rose-100 text-rose-600">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Total Incidents</p>
+              <h4 className="text-xl font-bold">{stats?.incidents ?? 0}</h4>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="p-3 rounded-full bg-amber-100 text-amber-600">
+              <Settings className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">AI Calls Today</p>
+              <h4 className="text-xl font-bold">{stats?.ai_calls_today ?? 0}</h4>
             </div>
           </CardContent>
         </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pending Approvals */}
+        {/* Pending Approvals - real data */}
         <Card>
           <CardHeader>
-            <CardTitle>Community Reports Approval</CardTitle>
-            <CardDescription>Validate user submitted disaster reports.</CardDescription>
+            <CardTitle>Pending Alert Approvals</CardTitle>
+            <CardDescription>Alerts requiring admin review before activation.</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Report</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Confidence</TableHead>
+                  <TableHead>Alert</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Severity</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow>
-                  <TableCell className="font-medium">
-                    <div>Fire at Sector 3</div>
-                    <div className="text-xs text-muted-foreground">2 mins ago</div>
-                  </TableCell>
-                  <TableCell>John Doe</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">High (98%)</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50">
-                        <Check className="w-4 h-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50">
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="font-medium">
-                    <div>Water Logging</div>
-                    <div className="text-xs text-muted-foreground">15 mins ago</div>
-                  </TableCell>
-                  <TableCell>Jane Smith</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">Medium (65%)</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50">
-                        <Check className="w-4 h-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50">
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                {pendingAlerts.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground">No pending approvals</TableCell>
+                  </TableRow>
+                )}
+                {pendingAlerts.map(alert => (
+                  <TableRow key={alert.id}>
+                    <TableCell className="font-medium">
+                      <div>{alert.title}</div>
+                      <div className="text-xs text-muted-foreground">{alert.created_at ? new Date(alert.created_at).toLocaleString() : ''}</div>
+                    </TableCell>
+                    <TableCell>{alert.alert_type || '—'}</TableCell>
+                    <TableCell>
+                      <Badge variant={alert.severity === 'critical' ? 'destructive' : 'outline'}>
+                        {alert.severity}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button size="icon" variant="ghost" onClick={() => handleApprove(alert.id, true)} className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50">
+                          <Check className="w-4 h-4" />
+                        </Button>
+                        <Button size="icon" variant="ghost" onClick={() => handleApprove(alert.id, false)} className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50">
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
 
-        {/* Recent System Logs */}
+        {/* System Logs - real data */}
         <Card>
           <CardHeader>
             <CardTitle>System Logs</CardTitle>
-            <CardDescription>Recent automated actions and errors.</CardDescription>
+            <CardDescription>Recent alerts, incidents, and system events.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="flex items-start gap-3 text-sm">
-                <div className="mt-0.5 w-2 h-2 rounded-full bg-green-500"></div>
-                <div className="flex-1">
-                  <p className="font-medium">Automated Alert Dispatched</p>
-                  <p className="text-muted-foreground">Cyclone warning sent to 12,000 users in Sector 4.</p>
-                  <p className="text-xs text-muted-foreground mt-1">10:42 AM</p>
+              {systemLogs.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">No recent activity</p>
+              )}
+              {systemLogs.map((log, i) => (
+                <div key={i} className="flex items-start gap-3 text-sm">
+                  <div className={`mt-0.5 w-2 h-2 rounded-full ${
+                    log.color === 'red' ? 'bg-red-500' :
+                    log.color === 'yellow' ? 'bg-yellow-500' :
+                    log.color === 'green' ? 'bg-green-500' : 'bg-blue-500'
+                  }`}></div>
+                  <div className="flex-1">
+                    <p className="font-medium">{log.title}</p>
+                    <p className="text-muted-foreground">{log.description}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{log.time ? new Date(log.time).toLocaleString() : ''}</p>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-start gap-3 text-sm">
-                <div className="mt-0.5 w-2 h-2 rounded-full bg-yellow-500"></div>
-                <div className="flex-1">
-                  <p className="font-medium">API Latency Spike</p>
-                  <p className="text-muted-foreground">Weather API response time > 2000ms.</p>
-                  <p className="text-xs text-muted-foreground mt-1">10:30 AM</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3 text-sm">
-                <div className="mt-0.5 w-2 h-2 rounded-full bg-blue-500"></div>
-                <div className="flex-1">
-                  <p className="font-medium">Database Backup</p>
-                  <p className="text-muted-foreground">Daily backup completed successfully.</p>
-                  <p className="text-xs text-muted-foreground mt-1">09:00 AM</p>
-                </div>
-              </div>
+              ))}
             </div>
           </CardContent>
         </Card>

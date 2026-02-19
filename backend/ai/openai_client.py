@@ -1,8 +1,4 @@
-"""
-Production-Ready OpenAI Client
-Supports: Chat (mini/heavy), Function Calling, Whisper, Vision, Embeddings, TTS
-Includes: Token budget enforcement, Redis caching, ai_logs logging
-"""
+
 import os
 import io
 import logging
@@ -195,12 +191,18 @@ class OpenAIClient:
             return {"error": "Token budget exceeded", "text": None}
         try:
             with open(file_path, "rb") as f:
-                kwargs: Dict[str, Any] = {"model": "whisper-1", "file": f}
+                kwargs: Dict[str, Any] = {
+                    "model": "whisper-1",
+                    "file": f,
+                    "response_format": "text",
+                    "prompt": "Disaster safety, weather, earthquake, cyclone, flood, India.",
+                }
                 if language:
                     kwargs["language"] = language
                 transcript = await self.client.audio.transcriptions.create(**kwargs)
             await self._record_usage(500, "whisper-1", "whisper")
-            return {"text": transcript.text, "error": None}
+            text = transcript if isinstance(transcript, str) else transcript.text
+            return {"text": text, "error": None}
         except Exception as e:
             logger.error(f"Whisper error: {e}")
             return {"error": str(e), "text": None}

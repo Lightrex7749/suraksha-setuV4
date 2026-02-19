@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  MessageCircle, Send, Mic, MicOff, Loader2, Sparkles,
-  Bot, User, Volume2, VolumeX, Zap, Brain, TrendingUp, X, Minimize2, Maximize2
+  MessageCircle, Send, Mic, MicOff, Loader2,
+  Bot, User, Volume2, VolumeX, X, Minimize2, Maximize2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import AIInput from '@/components/ui/ai-input';
@@ -20,7 +20,7 @@ const EnhancedAIChatInterface = () => {
     {
       id: 1,
       type: 'bot',
-      text: '👋 **Namaste!** I\'m Suraksha AI, your intelligent disaster safety assistant.\n\n🔹 **Real-time weather** & **air quality** updates\n🔹 **Emergency preparedness** & safety tips\n🔹 **Live disaster alerts** in your area\n🔹 **Safety guidance** for natural disasters\n\n🎤 **Voice Mode:** Click the voice button for hands-free conversation in ANY language!\n\nHow can I help you stay safe today?',
+      text: 'Hi, I\'m Suraksha AI. Ask me anything about weather, disasters, safety, or emergency preparedness.',
       timestamp: new Date(),
     },
   ]);
@@ -124,8 +124,19 @@ const EnhancedAIChatInterface = () => {
   // Voice Recording
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        }
+      });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
+      const recorder = new MediaRecorder(stream, { mimeType });
       const chunks = [];
 
       recorder.ondataavailable = (e) => {
@@ -237,8 +248,7 @@ const EnhancedAIChatInterface = () => {
       const lang = languageCode || detectedLanguage || 'en-IN';
       utterance.lang = lang;
 
-      // Adjust speech parameters for better naturalness
-      utterance.rate = 0.95;   // Slightly slower for clarity
+      utterance.rate = 0.9;
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
 
@@ -332,16 +342,16 @@ const EnhancedAIChatInterface = () => {
         transition={{ duration: 0.2, ease: "easeOut" }}
         className={`flex gap-2 ${isBot ? 'flex-row' : 'flex-row-reverse'} group`}
       >
-        <Avatar className={`h-12 w-12 shrink-0 ${isBot ? 'bg-white ring-2 ring-purple-100 dark:ring-purple-900' : 'bg-gradient-to-br from-indigo-500 to-purple-600 ring-2 ring-indigo-100 dark:ring-indigo-900'}`}>
-          <AvatarFallback className="text-white bg-transparent">
-            {isBot ? <img src="/ai_logo.png" alt="AI" className="h-10 w-10 object-contain" /> : <User className="h-6 w-6" />}
+        <Avatar className={`h-8 w-8 shrink-0 ${isBot ? 'bg-primary/10' : 'bg-primary'}`}>
+          <AvatarFallback className={`${isBot ? 'text-primary' : 'text-primary-foreground'} bg-transparent`}>
+            {isBot ? <Bot className="h-4 w-4" /> : <User className="h-4 w-4" />}
           </AvatarFallback>
         </Avatar>
         <div className={`flex-1 max-w-[85%] md:max-w-[75%] ${isBot ? '' : 'flex flex-col items-end'}`}>
           <div
-            className={`rounded-2xl px-4 py-2.5 shadow-sm ${isBot
-              ? 'bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 text-foreground border border-gray-200 dark:border-gray-700'
-              : 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-md'
+            className={`rounded-2xl px-4 py-2.5 ${isBot
+              ? 'bg-muted text-foreground border border-border'
+              : 'bg-primary text-primary-foreground'
               }`}
           >
             <div className={`text-[13px] leading-relaxed ${isBot ? 'space-y-1' : ''}`}>
@@ -371,36 +381,25 @@ const EnhancedAIChatInterface = () => {
   };
 
   return (
-    <Card className={`w-full ${isExpanded ? 'h-[700px]' : 'h-[550px]'} flex flex-col shadow-xl border-2 border-gray-200 dark:border-gray-800 overflow-hidden transition-all duration-300 backdrop-blur-sm bg-white/50 dark:bg-gray-900/50`}>
-      {/* Redesigned Header with Gradient */}
-      <CardHeader className="relative bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white pb-3 pt-3 px-4 shrink-0">
-        {/* Animated Background Pattern */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.1),transparent_50%)]"></div>
-        </div>
-
-        <div className="relative flex items-center justify-between">
+    <Card className={`w-full ${isExpanded ? 'h-[700px]' : 'h-[550px]'} flex flex-col shadow-sm border border-border overflow-hidden transition-all duration-300 bg-card`}>
+      {/* Clean Header */}
+      <CardHeader className="bg-card border-b border-border pb-3 pt-3 px-4 shrink-0">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {/* Animated AI Avatar */}
             <div className="relative">
-              <div className="w-14 h-14 rounded-2xl bg-white/95 backdrop-blur-sm flex items-center justify-center ring-2 ring-white/30 shadow-lg p-2">
+              <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center p-2">
                 <img src="/ai_logo.png" alt="Suraksha AI" className="h-full w-full object-contain" />
               </div>
-              <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 bg-green-400 rounded-full border-2 border-white shadow-md"></span>
+              <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-card"></span>
             </div>
             <div>
-              <CardTitle className="text-lg font-bold tracking-tight flex items-center gap-2">
+              <CardTitle className="text-base font-semibold tracking-tight text-foreground">
                 Suraksha AI
-                <Badge className="bg-white/20 text-white border-white/30 text-[10px] px-1.5 py-0 h-4 backdrop-blur-sm">
-                  <Zap className="w-2.5 h-2.5 mr-0.5" />
-                  Premium
-                </Badge>
               </CardTitle>
-              <p className="text-[11px] text-white/80 font-medium">Your Intelligent Safety Assistant</p>
+              <p className="text-[11px] text-muted-foreground">Safety Assistant</p>
             </div>
           </div>
           <div className="flex gap-1">
-            {/* Voice Mode Toggle */}
             <Button
               variant="ghost"
               size="icon"
@@ -410,13 +409,12 @@ const EnhancedAIChatInterface = () => {
                   // Voice mode enabled
                 } else {
                   // Voice mode disabled
-                  // Stop recording if active
                   if (isRecording) stopRecording();
                 }
               }}
               className={`h-8 w-8 rounded-lg transition-all ${voiceMode
-                ? 'bg-green-500/30 text-white hover:bg-green-500/40 ring-2 ring-green-400/50 animate-pulse'
-                : 'text-white hover:bg-white/20'
+                ? 'bg-green-500/15 text-green-600 hover:bg-green-500/25'
+                : 'text-muted-foreground hover:text-foreground'
                 }`}
               title={voiceMode ? "Voice Mode: ON" : "Voice Mode: OFF"}
             >
@@ -427,7 +425,7 @@ const EnhancedAIChatInterface = () => {
                 variant="ghost"
                 size="icon"
                 onClick={stopSpeaking}
-                className="h-8 w-8 text-white hover:bg-white/20 rounded-lg"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-lg"
               >
                 <VolumeX className="h-4 w-4" />
               </Button>
@@ -436,7 +434,7 @@ const EnhancedAIChatInterface = () => {
               variant="ghost"
               size="icon"
               onClick={() => setIsExpanded(!isExpanded)}
-              className="h-8 w-8 text-white hover:bg-white/20 rounded-lg"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-lg"
             >
               {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             </Button>
@@ -446,21 +444,21 @@ const EnhancedAIChatInterface = () => {
 
       <CardContent className="flex-1 flex flex-col p-0 space-y-0 overflow-hidden">
         {/* Quick Action Chips */}
-        <div className="px-4 pt-3 pb-2 border-b border-gray-200 dark:border-gray-800 bg-gradient-to-b from-gray-50/50 to-transparent dark:from-gray-900/30 shrink-0">
+        <div className="px-4 pt-3 pb-2 border-b border-border shrink-0">
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
             <AnimatePresence>
               {quickPrompts.map((prompt, i) => (
                 <motion.button
                   key={i}
-                  initial={{ opacity: 0, scale: 0.8, y: -10 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  whileHover={{ scale: 1.05, y: -2 }}
-                  whileTap={{ scale: 0.95 }}
-                  transition={{ delay: i * 0.05, type: "spring", stiffness: 300 }}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  transition={{ delay: i * 0.03 }}
                   onClick={() => setInputValue(prompt.text)}
-                  className={`group relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-all bg-gradient-to-r ${prompt.color} text-white shadow-sm hover:shadow-md`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors bg-muted hover:bg-muted/80 text-foreground border border-border"
                 >
-                  <span className="text-sm drop-shadow-sm">{prompt.icon}</span>
+                  <span className="text-sm">{prompt.icon}</span>
                   <span className="hidden md:inline">{prompt.shortText}</span>
                 </motion.button>
               ))}
@@ -468,8 +466,8 @@ const EnhancedAIChatInterface = () => {
           </div>
         </div>
 
-        {/* Messages Area with Better Styling */}
-        <ScrollArea ref={scrollAreaRef} className="flex-1 px-4 bg-gradient-to-b from-transparent via-gray-50/30 to-gray-100/30 dark:via-gray-900/20 dark:to-gray-800/20">
+        {/* Messages Area */}
+        <ScrollArea ref={scrollAreaRef} className="flex-1 px-4">
           <div className="space-y-3 py-4">
             <AnimatePresence>
               {messages.map((message) => (
@@ -483,16 +481,16 @@ const EnhancedAIChatInterface = () => {
                 exit={{ opacity: 0 }}
                 className="flex gap-2"
               >
-                <Avatar className="h-8 w-8 bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 ring-2 ring-purple-100 dark:ring-purple-900">
-                  <AvatarFallback className="text-white bg-transparent">
+                <Avatar className="h-8 w-8 bg-primary/10">
+                  <AvatarFallback className="text-primary bg-transparent">
                     <Bot className="h-4 w-4" />
                   </AvatarFallback>
                 </Avatar>
-                <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 rounded-2xl px-4 py-3 border border-gray-200 dark:border-gray-700 shadow-sm">
-                  <div className="flex gap-1">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-2 h-2 bg-pink-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <div className="bg-muted rounded-2xl px-4 py-3 border border-border">
+                  <div className="flex gap-1.5">
+                    <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
                 </div>
               </motion.div>
@@ -500,8 +498,8 @@ const EnhancedAIChatInterface = () => {
           </div>
         </ScrollArea>
 
-        {/* Premium Input Area */}
-        <div className="p-4 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm border-t border-gray-200/50 dark:border-gray-800/50 shrink-0">
+        {/* Input Area */}
+        <div className="p-4 bg-card border-t border-border shrink-0">
           <AIInput
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
@@ -512,13 +510,6 @@ const EnhancedAIChatInterface = () => {
             placeholder="Ask Suraksha AI..."
             disabled={isLoading}
           />
-          {/* Minimal Footer */}
-          <div className="flex justify-center mt-2">
-            <p className="text-[10px] text-gray-400 dark:text-gray-600 flex items-center gap-1.5 opacity-70 hover:opacity-100 transition-opacity cursor-default">
-              <Sparkles className="w-3 h-3 text-purple-400" />
-              <span>AI can make mistakes. Check important info.</span>
-            </p>
-          </div>
         </div>
       </CardContent>
     </Card>

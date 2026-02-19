@@ -1,12 +1,14 @@
 """
-Admin API Routes for Alert Management & Retraction
+Admin API Routes for Alert Management, Users & Stats
 """
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db, Alert, IncidentLog
+from database import get_db, Alert, IncidentLog, User, CommunityReport, CommunityPost, AILog
 from notifications import ws_manager
+from sqlalchemy import select, func
 import logging
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -24,6 +26,224 @@ class AlertApprovalRequest(BaseModel):
     alert_id: str
     approved: bool
     admin_user_id: Optional[str] = None
+
+
+class UserUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+    status: Optional[str] = None
+
+
+# ==================== ADMIN STATS ENDPOINT ====================
+
+@router.get("/stats")
+async def get_admin_stats(db=Depends(get_db)):
+    """Real-time dashboard stats."""
+    try:
+        # Active alerts
+        active_q = await db.execute(
+            select(func.count(Alert.id)).where(Alert.is_active == True, Alert.retracted == False)
+        )
+        active_alerts = active_q.scalar() or 0
+
+        # Pending alerts (not active, not retracted = pending review)
+        pending_q = await db.execute(
+            select(func.count(Alert.id)).where(Alert.is_active == False, Alert.retracted == False)
+        )
+        pending_alerts = pending_q.scalar() or 0
+
+        # Total alerts
+        total_q = await db.execute(select(func.count(Alert.id)))
+        total_alerts = total_q.scalar() or 0
+
+        # Users
+        total_users_q = await db.execute(select(func.count(User.id)))
+        total_users = total_users_q.scalar() or 0
+
+        active_users_q = await db.execute(
+            select(func.count(User.id)).where(User.is_active == True)
+        )
+        active_users = active_users_q.scalar() or 0
+
+        # Community posts
+        posts_q = await db.execute(select(func.count(CommunityPost.id)))
+        total_posts = posts_q.scalar() or 0
+
+        # Community reports (pending)
+        try:
+            reports_q = await db.execute(
+                select(func.count(CommunityReport.id)).where(CommunityReport.verified == False)
+            )
+            pending_reports = reports_q.scalar() or 0
+        except Exception:
+            pending_reports = 0
+
+        # Registered phones
+        try:
+            from sms_service import phone_registry
+            registered_phones = phone_registry.count
+        except Exception:
+            registered_phones = 0
+
+        # Incident count
+        try:
+            inc_q = await db.execute(select(func.count(IncidentLog.id)))
+            incidents = inc_q.scalar() or 0
+        except Exception:
+            incidents = 0
+
+        # AI calls today
+        try:
+            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            ai_q = await db.execute(
+                select(func.count(AILog.id)).where(AILog.created_at >= today)
+            )
+            ai_calls_today = ai_q.scalar() or 0
+        except Exception:
+            ai_calls_today = 0
+
+        return {
+            "active_alerts": active_alerts,
+            "pending_alerts": pending_alerts,
+            "total_alerts": total_alerts,
+            "total_users": total_users,
+            "active_users": active_users,
+            "total_posts": total_posts,
+            "pending_reports": pending_reports,
+            "registered_phones": registered_phones,
+            "incidents": incidents,
+            "ai_calls_today": ai_calls_today,
+            "system_status": "operational",
+        }
+    except Exception as e:
+        logger.error(f"Stats error: {e}")
+        return {
+            "active_alerts": 0, "pending_alerts": 0, "total_alerts": 0,
+            "total_users": 0, "active_users": 0, "total_posts": 0,
+            "pending_reports": 0, "registered_phones": 0, "incidents": 0,
+            "ai_calls_today": 0, "system_status": "operational",
+        }
+
+
+# ==================== USER MANAGEMENT ====================
+
+@router.get("/users")
+async def list_users(db=Depends(get_db)):
+    """List all users with stats."""
+    try:
+        result = await db.execute(
+            select(User).order_by(User.created_at.desc()).limit(200)
+        )
+        users = result.scalars().all()
+
+        return {
+            "users": [
+                {
+                    "id": u.id,
+                    "name": u.full_name or u.username,
+                    "email": u.email,
+                    "role": u.user_type or "citizen",
+                    "status": "active" if u.is_active else "inactive",
+                    "joinedDate": u.created_at.strftime("%Y-%m-%d") if u.created_at else "",
+                    "lastActive": _relative_time(u.updated_at),
+                    "location": (u.location or {}).get("city", "Not specified") if isinstance(u.location, dict) else "Not specified",
+                }
+                for u in users
+            ]
+        }
+    except Exception as e:
+        logger.error(f"User list error: {e}")
+        return {"users": []}
+
+
+@router.put("/users/{user_id}")
+async def update_user(user_id: str, body: UserUpdateRequest, db=Depends(get_db)):
+    """Update a user's profile."""
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if body.name is not None:
+        user.full_name = body.name
+    if body.email is not None:
+        user.email = body.email
+    if body.role is not None:
+        user.user_type = body.role
+    if body.status is not None:
+        user.is_active = body.status == "active"
+    await db.commit()
+    return {"success": True}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: str, db=Depends(get_db)):
+    """Delete a user."""
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.delete(user)
+    await db.commit()
+    return {"success": True}
+
+
+# ==================== SYSTEM LOGS ====================
+
+@router.get("/logs")
+async def get_system_logs(limit: int = 20, db=Depends(get_db)):
+    """Return recent system activity for the admin overview."""
+    logs = []
+
+    # Recent alerts as log items
+    try:
+        alert_result = await db.execute(
+            select(Alert).order_by(Alert.created_at.desc()).limit(limit)
+        )
+        for a in alert_result.scalars().all():
+            severity_map = {"critical": "red", "warning": "yellow", "info": "blue"}
+            logs.append({
+                "color": severity_map.get(a.severity, "blue"),
+                "title": f"Alert: {a.title}",
+                "description": f"{a.severity.capitalize()} — {a.source or 'system'}",
+                "time": a.created_at.isoformat() if a.created_at else "",
+            })
+    except Exception:
+        pass
+
+    # Recent incidents
+    try:
+        inc_result = await db.execute(
+            select(IncidentLog).order_by(IncidentLog.created_at.desc()).limit(limit)
+        )
+        for inc in inc_result.scalars().all():
+            logs.append({
+                "color": "red" if inc.incident_type == "retraction" else "yellow",
+                "title": f"Incident: {inc.incident_type}",
+                "description": inc.reason[:120],
+                "time": inc.created_at.isoformat() if inc.created_at else "",
+            })
+    except Exception:
+        pass
+
+    # Sort by time descending
+    logs.sort(key=lambda l: l["time"], reverse=True)
+    return {"logs": logs[:limit]}
+
+
+def _relative_time(dt):
+    if not dt:
+        return "Unknown"
+    now = datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        from datetime import timezone as tz
+        dt = dt.replace(tzinfo=tz.utc)
+    diff = now - dt
+    if diff.total_seconds() < 60:
+        return "Just now"
+    if diff.total_seconds() < 3600:
+        return f"{int(diff.total_seconds() // 60)} minutes ago"
+    if diff.total_seconds() < 86400:
+        return f"{int(diff.total_seconds() // 3600)} hours ago"
+    return f"{diff.days} days ago"
 
 
 # ==================== ADMIN ENDPOINTS ====================
