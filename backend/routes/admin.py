@@ -328,6 +328,112 @@ async def delete_user(user_id: str, db=Depends(get_db), _admin=Depends(verify_fi
     return {"success": True}
 
 
+# ==================== TELEGRAM ADMIN ENDPOINTS ====================
+
+class TelegramTestRequest(BaseModel):
+    chat_id: str
+    message: str
+
+
+class TelegramBroadcastRequest(BaseModel):
+    message: str
+    alert_id: Optional[str] = None  # if set, format as an alert card
+
+
+@router.get("/telegram/stats")
+async def telegram_stats(db=Depends(get_db)):
+    """Return Telegram integration stats."""
+    try:
+        from telegram_service import telegram_service, TELEGRAM_BOT_USERNAME
+        linked_q = await db.execute(
+            select(func.count(User.id)).where(User.telegram_chat_id.isnot(None))
+        )
+        linked_users = linked_q.scalar() or 0
+        total_q = await db.execute(select(func.count(User.id)))
+        total_users = total_q.scalar() or 0
+        return {
+            "enabled": telegram_service.enabled,
+            "bot_username": TELEGRAM_BOT_USERNAME,
+            "linked_users": linked_users,
+            "total_users": total_users,
+            "percentage": round(linked_users / total_users * 100, 1) if total_users else 0,
+        }
+    except Exception as e:
+        logger.error("Telegram stats error: %s", e)
+        return {"enabled": False, "bot_username": "", "linked_users": 0, "total_users": 0, "percentage": 0}
+
+
+@router.post("/telegram/test")
+async def telegram_test(body: TelegramTestRequest, _admin=Depends(verify_firebase_token)):
+    """Send a test Telegram message to a specific chat_id (admin only)."""
+    try:
+        from telegram_service import telegram_service
+        if not telegram_service.enabled:
+            raise HTTPException(status_code=503, detail="Telegram bot not configured. Set TELEGRAM_BOT_TOKEN in .env")
+        chat_id = body.chat_id.strip()
+        if not chat_id:
+            raise HTTPException(status_code=422, detail="chat_id is required")
+        # Sanitise message: strip raw HTML to prevent injection into Telegram API
+        message_text = body.message[:4000]
+        html_msg = f"🔔 <b>Admin Test Message</b>\n\n{message_text}\n\n<i>— Suraksha Setu Admin Panel</i>"
+        success = await telegram_service.send_message(chat_id, html_msg)
+        if not success:
+            raise HTTPException(status_code=502, detail="Telegram API rejected the message. Check chat_id and bot token.")
+        return {"success": True, "chat_id": chat_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Telegram test error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/telegram/broadcast")
+async def telegram_broadcast(body: TelegramBroadcastRequest, db=Depends(get_db), _admin=Depends(verify_firebase_token)):
+    """Broadcast a message to all Telegram-linked users."""
+    try:
+        from telegram_service import telegram_service
+        if not telegram_service.enabled:
+            raise HTTPException(status_code=503, detail="Telegram bot not configured. Set TELEGRAM_BOT_TOKEN in .env")
+
+        # If an alert_id is provided, format as alert card
+        text = ""
+        if body.alert_id:
+            alert = await db.get(Alert, body.alert_id)
+            if alert:
+                alert_dict = {
+                    "title": alert.title,
+                    "severity": alert.severity,
+                    "description": alert.description,
+                    "location": alert.location or {},
+                }
+                text = telegram_service._format_alert(alert_dict)
+            else:
+                text = body.message[:4000]
+        else:
+            text = f"📢 <b>Admin Broadcast</b>\n\n{body.message[:4000]}\n\n<i>— Suraksha Setu</i>"
+
+        # Fetch all linked users
+        result = await db.execute(
+            select(User).where(User.telegram_chat_id.isnot(None), User.is_active == True)
+        )
+        users = result.scalars().all()
+
+        if not users:
+            return {"success": True, "sent": 0, "total": 0, "message": "No Telegram-linked users found"}
+
+        import asyncio
+        tasks = [telegram_service.send_message(u.telegram_chat_id, text) for u in users]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        sent = sum(1 for r in results if r is True)
+        logger.info("Telegram broadcast: %d/%d sent", sent, len(users))
+        return {"success": True, "sent": sent, "total": len(users)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Telegram broadcast error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== SYSTEM LOGS ====================
 
 @router.get("/logs")
