@@ -11,9 +11,17 @@ import {
 
 const languages = [
   { code: 'en', name: 'English', flag: '🇬🇧' },
-  { code: 'hi', name: 'हिन्दी', flag: '🇮🇳' },
-  { code: 'ta', name: 'தமிழ்', flag: '🇮🇳' },
-  { code: 'bn', name: 'বাংলা', flag: '🇮🇳' },
+  { code: 'hi', name: 'Hindi', flag: '🇮🇳' },
+  { code: 'ta', name: 'Tamil', flag: '🇮🇳' },
+  { code: 'bn', name: 'Bengali', flag: '🇮🇳' },
+  { code: 'te', name: 'Telugu', flag: '🇮🇳' },
+  { code: 'mr', name: 'Marathi', flag: '🇮🇳' },
+  { code: 'gu', name: 'Gujarati', flag: '🇮🇳' },
+  { code: 'kn', name: 'Kannada', flag: '🇮🇳' },
+  { code: 'ml', name: 'Malayalam', flag: '🇮🇳' },
+  { code: 'pa', name: 'Punjabi', flag: '🇮🇳' },
+  { code: 'ur', name: 'Urdu', flag: '🇵🇰' },
+  { code: 'es', name: 'Spanish', flag: '🇪🇸' },
 ];
 
 const LanguageSwitcher = () => {
@@ -24,7 +32,8 @@ const LanguageSwitcher = () => {
     localStorage.setItem('preferredLanguage', lng);
   };
 
-  const currentLanguage = languages.find(lang => lang.code === i18n.language) || languages[0];
+  const normalized = (i18n.language || 'en').split('-')[0];
+  const currentLanguage = languages.find(lang => lang.code === normalized) || languages[0];
 
   return (
     <DropdownMenu>
@@ -45,7 +54,7 @@ const LanguageSwitcher = () => {
               <span>{lang.flag}</span>
               <span>{lang.name}</span>
             </span>
-            {i18n.language === lang.code && (
+            {normalized === lang.code && (
               <Check className="h-4 w-4 text-primary" />
             )}
           </DropdownMenuItem>
