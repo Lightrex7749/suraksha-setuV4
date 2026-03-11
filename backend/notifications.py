@@ -98,6 +98,36 @@ class PushNotificationManager:
             logger.error(f"Error sending push notification: {str(e)}")
             return False
 
+    async def send_nearby_push(self, alert_lat: float, alert_lon: float, payload: dict, radius_km: float = 15, db=None) -> int:
+        """Send push notifications to all subscribed users within radius_km of the alert."""
+        sent = 0
+        if db is None:
+            # Fall back to in-memory broadcast
+            return await self.broadcast_notification(payload)
+        try:
+            from database import PushSubscription
+            from sqlalchemy import select
+            result = await db.execute(
+                select(PushSubscription).where(
+                    PushSubscription.is_active == True,  # noqa: E712
+                    PushSubscription.user_lat.is_not(None),
+                )
+            )
+            subs = result.scalars().all()
+            for sub in subs:
+                if sub.user_lat is None or sub.user_lon is None:
+                    continue
+                lat_diff = abs(sub.user_lat - alert_lat)
+                lon_diff = abs(sub.user_lon - alert_lon)
+                distance_km = ((lat_diff ** 2 + lon_diff ** 2) ** 0.5) * 111
+                if distance_km <= radius_km:
+                    success = await self.send_notification(sub.subscription_json, payload)
+                    if success:
+                        sent += 1
+        except Exception as e:
+            logger.error("Proximity push error: %s", e)
+        return sent
+
     async def broadcast_notification(self, payload: Dict[str, Any]) -> int:
         """Send notification to all subscribed clients"""
         sent_count = 0

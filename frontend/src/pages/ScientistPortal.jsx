@@ -39,7 +39,8 @@ const ScientistPortal = () => {
       formData.append('file', file);
 
       try {
-        const response = await fetch('http://localhost:8000/api/scientist/upload-dataset', {
+        const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+        const response = await fetch(`${backendUrl}/api/scientist/upload-dataset`, {
           method: 'POST',
           body: formData,
           credentials: 'include'
@@ -62,7 +63,8 @@ const ScientistPortal = () => {
   const handleRunSimulation = async () => {
     setRunningSimulation(true);
     try {
-      const response = await fetch('http://localhost:8000/api/scientist/run-simulation', {
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/scientist/run-simulation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -90,7 +92,8 @@ const ScientistPortal = () => {
 
   const handleExportModel = async (modelId) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/scientist/export-model/${modelId}`, {
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/scientist/export-model/${modelId}`, {
         credentials: 'include'
       });
 
@@ -121,7 +124,8 @@ const ScientistPortal = () => {
       formData.append('file', file);
 
       try {
-        const response = await fetch('http://localhost:8000/api/scientist/import-model', {
+        const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+        const response = await fetch(`${backendUrl}/api/scientist/import-model`, {
           method: 'POST',
           body: formData,
           credentials: 'include'

@@ -7,7 +7,7 @@ from fastapi import (
     WebSocket, WebSocketDisconnect, UploadFile, File,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from contextlib import asynccontextmanager
@@ -30,6 +30,7 @@ from utils.redis_client import redis_client
 # AI modules
 from ai.orchestrator import orchestrator
 from ai.openai_client import ai_client, TOTAL_TOKEN_LIMIT
+from ai.sarvam_client import sarvam_client
 from ai.vision_pipeline import analyze_community_image, save_upload
 from ai.voice_pipeline import process_voice_query
 
@@ -85,13 +86,25 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten for production
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Global exception handler for unhandled errors
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled error on {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": "Internal server error"},
+    )
 
 
 # ══════════════════════════════════════════════════════════════
@@ -100,8 +113,8 @@ app.add_middleware(
 ai_router = APIRouter(prefix="/api/ai", tags=["AI"])
 
 
-@ai_router.post("", dependencies=[Depends(RateLimiter(times=10, seconds=60))])
-@ai_router.post("/chat", dependencies=[Depends(RateLimiter(times=10, seconds=60))])
+@ai_router.post("")
+@ai_router.post("/chat")
 async def ai_chat(request: Request):
     """
     Unified AI Chat Endpoint.
@@ -112,6 +125,12 @@ async def ai_chat(request: Request):
     role = data.get("role", "citizen")
     message = data.get("message") or data.get("query", "")
     context = data.get("context", {})
+
+    # Language hints from frontend
+    locale = data.get("locale") or data.get("language")
+    if locale:
+        context["locale"] = locale
+        context["language"] = locale
 
     # Pass through widget-specific fields
     if data.get("rag_mode"):
@@ -163,7 +182,7 @@ async def ai_chat(request: Request):
 
 from ai.voice_pipeline import process_voice_query
 
-@ai_router.post("/voice", dependencies=[Depends(RateLimiter(times=5, seconds=60))])
+@ai_router.post("/voice")
 async def ai_voice(
     file: UploadFile = File(...),
     role: str = "citizen",
@@ -184,11 +203,20 @@ async def ai_voice(
         audio_bytes=audio_bytes,
         filename=file.filename or "voice.wav",
         role=role,
+        context={"locale": language, "language": language} if language else {},
         language=language,
     )
 
+    # Never hard-fail voice UX on upstream STT issues.
+    # Return a graceful payload so frontend can fall back to transcript-based text chat.
     if result.get("error"):
-        raise HTTPException(status_code=500, detail=result["error"])
+        return {
+            "transcript": result.get("transcript") or "",
+            "detected_language": language or "unknown",
+            "response": "I could not transcribe the audio clearly. Please try again or type your message.",
+            "usage": None,
+            "error": "voice_stt_unavailable",
+        }
 
     # Log voice usage
     try:
@@ -209,7 +237,7 @@ async def ai_voice(
     return result
 
 
-@ai_router.post("/vision", dependencies=[Depends(RateLimiter(times=5, seconds=60))])
+@ai_router.post("/vision")
 async def ai_vision(request: Request):
     """
     Vision Analysis Endpoint.
@@ -243,7 +271,7 @@ async def ai_vision(request: Request):
     return result
 
 
-@ai_router.post("/tts", dependencies=[Depends(RateLimiter(times=5, seconds=60))])
+@ai_router.post("/tts")
 async def ai_tts(request: Request):
     """
     Text-to-Speech Endpoint.
@@ -258,15 +286,95 @@ async def ai_tts(request: Request):
     if not text:
         raise HTTPException(status_code=400, detail="text required")
 
-    result = await ai_client.text_to_speech(text, voice=voice, speed=speed)
-    if result.get("error"):
-        raise HTTPException(status_code=500, detail=result["error"])
+    lang = data.get("language", "en-IN")
+    # Indian languages → Sarvam TTS is cheaper and sounds more natural
+    indian_langs = {"hi", "hi-IN", "ta", "ta-IN", "te", "te-IN", "bn", "bn-IN",
+                    "gu", "gu-IN", "kn", "kn-IN", "ml", "ml-IN", "pa", "pa-IN",
+                    "mr", "mr-IN", "hi-rom"}
+    use_sarvam_first = sarvam_client.enabled and any(lang.startswith(l.split("-")[0]) for l in indian_langs)
+
+    result = None
+    if use_sarvam_first:
+        # Normalise language code for Sarvam (hi-rom → hi-IN)
+        sarvam_lang = "hi-IN" if lang in ("hi-rom", "hi") else (lang if "-IN" in lang else f"{lang.split('-')[0]}-IN")
+        result = await sarvam_client.text_to_speech(text, language_code=sarvam_lang)
+        if result.get("error"):
+            logger.warning("Sarvam TTS failed (%s), falling back to OpenAI", result["error"])
+            result = None
+
+    if not result or result.get("error"):
+        openai_result = await ai_client.text_to_speech(text, voice=voice, speed=speed)
+        if openai_result.get("error"):
+            raise HTTPException(status_code=500, detail=openai_result["error"])
+        result = openai_result
 
     return StreamingResponse(
         io.BytesIO(result["audio_bytes"]),
         media_type="audio/mpeg",
         headers={"Content-Disposition": "attachment; filename=speech.mp3"},
     )
+
+
+@ai_router.post("/translate")
+async def ai_translate(request: Request):
+    """
+    Translation endpoint (Sarvam-first backup utility).
+    Body: { "text": "...", "source_language": "auto", "target_language": "hi" }
+    """
+    data = await request.json()
+    text = data.get("text", "")
+    source_language = data.get("source_language", "auto")
+    target_language = data.get("target_language", "en")
+
+    if not text:
+        raise HTTPException(status_code=400, detail="text required")
+
+    result = await sarvam_client.translate(
+        text=text,
+        source_language=source_language,
+        target_language=target_language,
+    )
+
+    # Fallback to primary LLM translation if Sarvam route is unavailable
+    if result.get("error"):
+        if ai_client.client:
+            fallback = await ai_client.chat(
+                system_prompt=(
+                    "You are a translation assistant. Return only translated text with no extra notes."
+                ),
+                user_prompt=(
+                    f"Translate from {source_language} to {target_language}:\n{text}"
+                ),
+                model=os.getenv("OPENAI_MODEL_MINI", "gpt-4o-mini"),
+                max_tokens=300,
+                temperature=0.1,
+            )
+            if not fallback.get("error") and fallback.get("content"):
+                return {
+                    "success": True,
+                    "translated_text": fallback.get("content").strip(),
+                    "source_language": source_language,
+                    "target_language": target_language,
+                    "provider": "openai",
+                }
+
+        # Final passthrough fallback (never fail hard)
+        return {
+            "success": True,
+            "translated_text": text,
+            "source_language": source_language,
+            "target_language": target_language,
+            "provider": "fallback",
+            "warning": "Translation provider unavailable; returned original text",
+        }
+
+    return {
+        "success": True,
+        "translated_text": result.get("translated_text"),
+        "source_language": source_language,
+        "target_language": target_language,
+        "provider": "sarvam",
+    }
 
 
 # ══════════════════════════════════════════════════════════════
@@ -319,9 +427,39 @@ async def get_playbook_actions(risk_type: str, severity: str, role: str = "citiz
 #  NOTIFICATIONS
 # ══════════════════════════════════════════════════════════════
 @api_router.post("/notifications/subscribe")
-async def subscribe_push(subscription: dict):
-    success = push_manager.add_subscription(subscription)
-    return {"success": success}
+async def subscribe_push(subscription: dict, db: AsyncSession = Depends(get_db)):
+    """Register a push subscription, optionally with user location for proximity alerts."""
+    # The payload may contain: { subscription: {...webpush sub...}, user_id, user_lat, user_lon }
+    sub_info = subscription.get('subscription') or subscription
+    user_id = subscription.get('user_id')
+    user_lat = subscription.get('user_lat')
+    user_lon = subscription.get('user_lon')
+
+    # Add to in-memory manager (for WS/push broadcast compat)
+    push_manager.add_subscription(sub_info)
+
+    # Persist to DB with location so proximity push works after server restart
+    try:
+        from database import PushSubscription
+        endpoint = (sub_info.get('endpoint') or '')
+        # Upsert: delete old entry for same endpoint, then insert
+        from sqlalchemy import select as sa_select, delete as sa_delete
+        await db.execute(sa_delete(PushSubscription).where(
+            PushSubscription.subscription_json['endpoint'].as_string() == endpoint
+        ))
+        db.add(PushSubscription(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            subscription_json=sub_info,
+            user_lat=float(user_lat) if user_lat is not None else None,
+            user_lon=float(user_lon) if user_lon is not None else None,
+            is_active=True,
+        ))
+        await db.commit()
+    except Exception as e:
+        logger.warning("Could not persist push subscription: %s", e)
+
+    return {"success": True}
 
 
 @api_router.post("/notifications/broadcast")
@@ -338,7 +476,59 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
     try:
         while True:
             data = await websocket.receive_text()
-            pass
+            try:
+                message = json.loads(data)
+                msg_type = message.get("type")
+
+                if msg_type == "ping":
+                    await ws_manager.send_personal_message(
+                        {"type": "pong", "timestamp": datetime.now(timezone.utc).isoformat()},
+                        websocket,
+                    )
+                elif msg_type == "set_location":
+                    location = message.get("location", {})
+                    ws_manager.set_client_location(client_id, location)
+                    await ws_manager.send_personal_message(
+                        {"type": "location_set", "status": "ok"},
+                        websocket,
+                    )
+                elif msg_type == "request_alerts":
+                    async with AsyncSessionLocal() as db:
+                        result = await db.execute(
+                            select(Alert)
+                            .where(Alert.is_active == True, Alert.retracted == False)
+                            .order_by(Alert.created_at.desc())
+                            .limit(20)
+                        )
+                        active_alerts = result.scalars().all()
+                    await ws_manager.send_personal_message(
+                        {
+                            "type": "alerts_list",
+                            "alerts": [
+                                {
+                                    "id": str(a.id),
+                                    "type": a.event_type,
+                                    "severity": a.severity,
+                                    "title": a.title,
+                                    "description": a.description,
+                                    "coordinates": a.coordinates,
+                                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                                }
+                                for a in active_alerts
+                            ],
+                        },
+                        websocket,
+                    )
+                elif msg_type == "get_stats":
+                    await ws_manager.send_personal_message(
+                        {
+                            "type": "stats",
+                            "connected_clients": len(ws_manager.active_connections),
+                        },
+                        websocket,
+                    )
+            except json.JSONDecodeError:
+                pass
     except WebSocketDisconnect:
         ws_manager.disconnect(client_id)
 
@@ -592,6 +782,13 @@ app.include_router(risk_router)
 from routes.community import community_router
 app.include_router(community_router)
 
+# Serve uploaded media files
+from fastapi.staticfiles import StaticFiles
+import pathlib as _pathlib
+_uploads_dir = _pathlib.Path(os.getenv("UPLOAD_DIR", "./uploads"))
+_uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
+
 # Disasters routes
 from routes.disasters import disasters_router
 app.include_router(disasters_router)
@@ -635,5 +832,10 @@ def read_root():
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting Suraksha Setu Backend Server...")
+    import sys
+    # Force UTF-8 output on Windows to handle emoji in logs
+    if sys.platform == "win32":
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    print("Starting Suraksha Setu Backend Server...")
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)

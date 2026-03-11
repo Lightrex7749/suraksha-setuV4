@@ -12,8 +12,113 @@ export const useAuth = () => {
   return context;
 };
 
-// Admin email - only this email gets admin role
-const ADMIN_EMAIL = 's.sam.11221177@gmail.com';
+// Admin emails - configurable list of admin users
+const ADMIN_EMAILS = [
+  's.sam.11221177@gmail.com',
+];
+
+// Developer emails - full access to all dashboards and tools
+const DEVELOPER_EMAILS = [
+  'lightrex06@gmail.com',
+];
+
+const isAdminEmail = (email) => ADMIN_EMAILS.includes(email?.toLowerCase());
+const isDeveloperEmail = (email) => DEVELOPER_EMAILS.includes(email?.toLowerCase());
+
+const resolvePrivilegedRoleByEmail = (email) => {
+  if (isDeveloperEmail(email)) return 'developer';
+  if (isAdminEmail(email)) return 'admin';
+  return null;
+};
+
+// Resolve user role: check Firestore profile first, then admin email list, then default
+const resolveUserRole = async (firebaseUser, fallbackRole = 'citizen') => {
+  // Privileged emails should always retain elevated access.
+  const privilegedRole = resolvePrivilegedRoleByEmail(firebaseUser?.email);
+  if (privilegedRole) return privilegedRole;
+
+  try {
+    const profile = await getUserProfile(firebaseUser.uid);
+    if (profile?.role) return profile.role;
+  } catch (e) {
+    // Firestore lookup failed, fall through
+  }
+  return fallbackRole;
+};
+
+// ── Location helpers ──────────────────────────────────────────────────────────
+const LOCATION_CACHE_KEY = 'user_location_cache';
+const LOCATION_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+
+const readLocationCache = () => {
+  try {
+    const raw = localStorage.getItem(LOCATION_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (Date.now() > cached.expiresAt) {
+      localStorage.removeItem(LOCATION_CACHE_KEY);
+      return null;
+    }
+    return cached;
+  } catch {
+    return null;
+  }
+};
+
+const writeLocationCache = (data) => {
+  try {
+    localStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify({ ...data, expiresAt: Date.now() + LOCATION_CACHE_TTL }));
+  } catch {}
+};
+
+const reverseGeocode = async (lat, lon) => {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`,
+      { headers: { 'Accept-Language': 'en' } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const a = data.address || {};
+    const city = a.city || a.town || a.village || a.county || a.state_district || '';
+    const state = a.state || '';
+    const country = a.country || 'India';
+    const display = [city, state, country].filter(Boolean).join(', ');
+    const fullAddress = data.display_name || display;
+    return { city, state, country, display, fullAddress };
+  } catch {
+    return null;
+  }
+};
+
+export const detectUserLocation = () =>
+  new Promise((resolve) => {
+    // 1. Return cache immediately if fresh
+    const cached = readLocationCache();
+    if (cached) { resolve(cached); return; }
+
+    if (!navigator.geolocation) { resolve(null); return; }
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude: lat, longitude: lon, accuracy } = pos.coords;
+        const geo = await reverseGeocode(lat, lon);
+        const result = {
+          lat, lon, accuracy,
+          city: geo?.city || '',
+          state: geo?.state || '',
+          country: geo?.country || 'India',
+          display: geo?.display || `${lat.toFixed(4)}, ${lon.toFixed(4)}`,
+          fullAddress: geo?.fullAddress || `${lat.toFixed(4)}, ${lon.toFixed(4)}`,
+        };
+        writeLocationCache(result);
+        resolve(result);
+      },
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  });
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -21,6 +126,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [firebaseReady, setFirebaseReady] = useState(false);
+  const [userLocation, setUserLocation] = useState(() => readLocationCache());
 
   // Check Firebase configuration on mount
   useEffect(() => {
@@ -50,6 +156,8 @@ export const AuthProvider = ({ children }) => {
           setToken(storedToken);
           setLoading(false);
           console.log('Session restored for:', parsedUser.email);
+          // Detect/refresh GPS location in background after session restore
+          detectUserLocation().then((loc) => { if (loc) setUserLocation(loc); }).catch(() => {});
           return;
         } catch (e) {
           console.error('Failed to restore session:', e);
@@ -77,8 +185,8 @@ export const AuthProvider = ({ children }) => {
         // User is signed in
         const idToken = await firebaseUser.getIdToken();
 
-        // Determine role: admin if specific email, otherwise citizen
-        const userRole = firebaseUser.email === ADMIN_EMAIL ? 'admin' : 'citizen';
+        // Resolve role from Firestore profile or admin email list
+        const userRole = await resolveUserRole(firebaseUser);
 
         const userData = {
           id: firebaseUser.uid,
@@ -97,6 +205,9 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('auth_token', idToken);
         localStorage.setItem('auth_user', JSON.stringify(userData));
         localStorage.setItem('auth_token_expiry', expiryTime.toString());
+
+        // Detect location in background (uses cache if fresh)
+        detectUserLocation().then((loc) => { if (loc) setUserLocation(loc); });
       } else {
         // User is signed out
         setUser(null);
@@ -124,8 +235,8 @@ export const AuthProvider = ({ children }) => {
       const firebaseUser = await loginWithEmail(email, password);
       const idToken = await firebaseUser.getIdToken();
 
-      // Determine role: admin if specific email, otherwise citizen
-      const userRole = firebaseUser.email === ADMIN_EMAIL ? 'admin' : 'citizen';
+      // Resolve role from Firestore profile or admin email list
+      const userRole = await resolveUserRole(firebaseUser);
 
       const userData = {
         id: firebaseUser.uid,
@@ -163,8 +274,8 @@ export const AuthProvider = ({ children }) => {
       const firebaseUser = await registerWithEmail(email, password, displayName);
       const idToken = await firebaseUser.getIdToken();
 
-      // Determine role: admin if specific email, otherwise use selected role
-      const userRole = firebaseUser.email === ADMIN_EMAIL ? 'admin' : role;
+      // Use selected role unless this email is privileged.
+      const userRole = resolvePrivilegedRoleByEmail(firebaseUser.email) || role;
 
       // Normalize phone number
       const normalizedPhone = phone.replace(/[\s\-]/g, '');
@@ -229,8 +340,8 @@ export const AuthProvider = ({ children }) => {
       const firebaseUser = await loginWithGoogle();
       const idToken = await firebaseUser.getIdToken();
 
-      // Determine role: admin if specific email, otherwise citizen
-      const userRole = firebaseUser.email === ADMIN_EMAIL ? 'admin' : 'citizen';
+      // Resolve role from Firestore profile or admin email list
+      const userRole = await resolveUserRole(firebaseUser);
 
       const userData = {
         id: firebaseUser.uid,
@@ -266,6 +377,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
       localStorage.removeItem('auth_token_expiry');
+      // location cache is kept — same device, same location likely
       return;
     }
     try {
@@ -311,7 +423,9 @@ export const AuthProvider = ({ children }) => {
     loading,
     error,
     isAuthenticated: !!user,
-    firebaseReady
+    firebaseReady,
+    userLocation,
+    detectLocation: () => detectUserLocation().then((loc) => { if (loc) setUserLocation(loc); return loc; }),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

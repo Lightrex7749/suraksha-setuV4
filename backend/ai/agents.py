@@ -53,8 +53,8 @@ class CitizenAgent(BaseAgent):
     Has access to satellite data search for farmers requesting MOSDAC data.
     """
     name = "citizen"
-    temperature = 0.3
-    max_tokens = 500
+    temperature = 0.55   # increased from 0.3
+    max_tokens = 550
     tool_schemas = [PLAYBOOK_SCHEMA, DB_QUERY_SCHEMA, SATELLITE_SEARCH_SCHEMA]
 
     def system_prompt(self, context: dict = None) -> str:
@@ -75,7 +75,7 @@ class StudentAgent(BaseAgent):
     Higher temperature for creative, engaging replies.
     """
     name = "student"
-    temperature = 0.8
+    temperature = 0.75   # slightly lower to avoid hallucination
     max_tokens = 600
     tool_schemas = [PLAYBOOK_SCHEMA, QUIZ_SCHEMA]
 

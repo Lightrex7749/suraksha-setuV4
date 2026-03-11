@@ -255,9 +255,10 @@ const AIChatInterface = () => {
     setLoading(true);
 
     try {
-      const response = await axios.post(`${API_URL}/api/chat`, {
+      const response = await axios.post(`${API_URL}/api/ai/chat`, {
         message: textToSend,
-        context: 'dashboard',
+        role: 'citizen',
+        context: { domain: 'dashboard' },
         language: inputLanguage
       });
 

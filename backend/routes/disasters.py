@@ -1,9 +1,12 @@
 """
-Disasters API Route with MOSDAC Integration
+Disasters API Route with MOSDAC Integration + USGS Earthquakes + GDACS
 """
 from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
 import logging
+import httpx
+import asyncio
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -97,17 +100,149 @@ HISTORICAL_DISASTERS = [
     },
 ]
 
+# ─── USGS Earthquake helper ────────────────────────────────────────────────────
+async def _fetch_usgs_earthquakes() -> list:
+    """Fetch M≥4.0 earthquakes in/around India from USGS in the last 30 days."""
+    try:
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=30)
+        params = {
+            "format": "geojson",
+            "starttime": start.strftime("%Y-%m-%d"),
+            "endtime": end.strftime("%Y-%m-%d"),
+            "minlatitude": 6,
+            "maxlatitude": 38,
+            "minlongitude": 63,
+            "maxlongitude": 100,
+            "minmagnitude": 4.0,
+            "orderby": "time",
+            "limit": 20,
+        }
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://earthquake.usgs.gov/fdsnws/event/1/query", params=params
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        results = []
+        for feat in data.get("features", []):
+            props = feat.get("properties", {})
+            geo = feat.get("geometry", {}).get("coordinates", [None, None, None])
+            mag = props.get("mag", 0) or 0
+            place = props.get("place", "India Region")
+            ts_ms = props.get("time")
+            date_str = (
+                datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+                if ts_ms else end.strftime("%Y-%m-%d")
+            )
+            severity = (
+                "extreme" if mag >= 7 else
+                "high" if mag >= 6 else
+                "moderate" if mag >= 5 else
+                "low"
+            )
+            results.append({
+                "id": f"usgs_{feat.get('id', '')}",
+                "type": "earthquake",
+                "title": f"M{mag:.1f} Earthquake – {place}",
+                "date": date_str,
+                "location": place,
+                "lat": geo[1],
+                "lon": geo[0],
+                "severity": severity,
+                "status": "active" if props.get("status") == "reviewed" else "monitoring",
+                "casualties": None,
+                "affected_population": None,
+                "damage": None,
+                "description": f"Magnitude {mag:.1f} earthquake at depth {geo[2] or 0:.0f} km. {place}.",
+                "magnitude": mag,
+                "depth_km": round(geo[2] or 0, 1),
+                "source": "USGS",
+            })
+        logger.info("Fetched %d earthquakes from USGS", len(results))
+        return results
+    except Exception as exc:
+        logger.warning("USGS earthquake fetch failed: %s", exc)
+        return []
+
+
+# ─── GDACS real-time global alerts ────────────────────────────────────────────
+async def _fetch_gdacs_disasters() -> list:
+    """Fetch recent GDACS alerts (cyclones, floods, earthquakes) for South Asia."""
+    try:
+        async with httpx.AsyncClient(timeout=10, headers={"Accept": "application/json"}) as client:
+            resp = await client.get(
+                "https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP",
+                params={"eventtypes": "CY,FL,EQ,TC,DR", "fromdate": (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        results = []
+        type_map = {"CY": "cyclone", "TC": "cyclone", "FL": "flood", "EQ": "earthquake", "DR": "drought", "VO": "other"}
+        severity_map = {"Green": "low", "Orange": "moderate", "Red": "high"}
+
+        for feat in data.get("features", []):
+            props = feat.get("properties", {})
+            geo = feat.get("geometry", {})
+            coords = geo.get("coordinates", [None, None]) if geo.get("type") == "Point" else [None, None]
+
+            # Filter roughly to South Asia
+            lat = coords[1] if coords[1] else None
+            lon = coords[0] if coords[0] else None
+            if lat is not None and (lat < -10 or lat > 40 or lon < 50 or lon > 110):
+                continue
+
+            evt_type = type_map.get(props.get("eventtype", ""), "other")
+            alert_level = props.get("alertlevel", "Green")
+            sev = severity_map.get(alert_level, "low")
+            date_str = (props.get("fromdate") or "")[:10] or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+            results.append({
+                "id": f"gdacs_{props.get('eventid', '')}_{props.get('episodeid', '')}",
+                "type": evt_type,
+                "title": props.get("eventname") or props.get("name") or f"GDACS {evt_type.title()} Alert",
+                "date": date_str,
+                "location": props.get("country") or "South Asia",
+                "lat": lat,
+                "lon": lon,
+                "severity": sev,
+                "status": "active",
+                "casualties": props.get("severitydata", {}).get("deaths") if isinstance(props.get("severitydata"), dict) else None,
+                "affected_population": props.get("population"),
+                "damage": None,
+                "description": props.get("description") or props.get("htmldescription") or "",
+                "source": "GDACS",
+            })
+        logger.info("Fetched %d events from GDACS", len(results))
+        return results
+    except Exception as exc:
+        logger.warning("GDACS fetch failed: %s", exc)
+        return []
+
 
 @disasters_router.get("/disasters")
 async def get_disasters(
     disaster_type: Optional[str] = None,
     limit: int = Query(default=50, le=100),
 ):
-    """Get disaster data with optional MOSDAC real-time satellite data."""
+    """Get disaster data combining USGS earthquakes, GDACS alerts and MOSDAC satellite data."""
     try:
         disasters = list(HISTORICAL_DISASTERS)
 
-        # Try to fetch real-time MOSDAC data
+        # ── Fetch real-time data in parallel ──────────────────────────────────
+        real_time_results = await asyncio.gather(
+            _fetch_usgs_earthquakes(),
+            _fetch_gdacs_disasters(),
+            return_exceptions=True,
+        )
+
+        for result in real_time_results:
+            if isinstance(result, list):
+                disasters.extend(result)
+
+        # ── Try MOSDAC (existing) ─────────────────────────────────────────────
         try:
             from mosdac_service import get_mosdac_service
             from data_transformers import (
@@ -129,7 +264,17 @@ async def get_disasters(
                 disasters = merge_with_existing_disasters(mosdac_disasters, disasters)
                 logger.info(f"Merged {len(mosdac_disasters)} MOSDAC disasters")
         except Exception as e:
-            logger.warning(f"MOSDAC unavailable: {e}, using historical data only")
+            logger.warning(f"MOSDAC unavailable: {e}, using other sources")
+
+        # ── De-duplicate by id ────────────────────────────────────────────────
+        seen = set()
+        unique = []
+        for d in disasters:
+            did = d.get("id", "")
+            if did not in seen:
+                seen.add(did)
+                unique.append(d)
+        disasters = unique
 
         if disaster_type:
             disasters = [

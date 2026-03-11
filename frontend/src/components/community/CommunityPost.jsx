@@ -2,12 +2,15 @@ import React, { useState } from 'react';
 import { 
   ThumbsUp, MessageSquare, Share2, Bookmark, MapPin, 
   MoreVertical, Trash2, Edit2, Flag, ExternalLink,
-  Play, Volume2, VolumeX, Maximize2, Heart, Image as ImageIcon
+  Play, Volume2, VolumeX, Maximize2, Heart, Image as ImageIcon,
+  MessageCircle, ShieldAlert
 } from 'lucide-react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,8 +23,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import CommentSection from './CommentSection';
+import DirectMessagePanel from './DirectMessagePanel';
 import { cn } from "@/lib/utils";
+import { toast } from 'sonner';
+
+const BADGE_STYLE = {
+  Guardian:  'bg-purple-100 text-purple-700 border-purple-200',
+  Saviour:   'bg-indigo-100 text-indigo-700 border-indigo-200',
+  Hero:      'bg-blue-100 text-blue-700 border-blue-200',
+  Responder: 'bg-green-100 text-green-700 border-green-200',
+  Helper:    'bg-teal-100 text-teal-700 border-teal-200',
+};
 
 const CommunityPost = ({ 
   post, 
@@ -29,17 +49,41 @@ const CommunityPost = ({
   onDelete, 
   onShare, 
   onSave,
-  currentUserId = 'current-user'
+  currentUserId,
+  currentUserName,
+  currentUserPhoto,
+  authorBadge,
 }) => {
   const [showComments, setShowComments] = useState(false);
+  const [showDM, setShowDM] = useState(false);
   const [liked, setLiked] = useState(post.likedByUser || false);
   const [likeCount, setLikeCount] = useState(post.likes || 0);
   const [saved, setSaved] = useState(post.savedByUser || false);
   const [comments, setComments] = useState(post.comments || []);
   const [showMediaModal, setShowMediaModal] = useState(false);
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(0);
+  const [isResolved, setIsResolved] = useState(post.is_resolved || false);
+  const [resolving, setResolving] = useState(false);
+  // Report dialog
+  const [showReportDialog, setShowReportDialog] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportDescription, setReportDescription] = useState('');
+  const [submittingReport, setSubmittingReport] = useState(false);
 
-  const isOwnPost = post.userId === currentUserId || post.author === 'You';
+  // Sync like count from parent when the post prop updates (e.g. after re-fetch)
+  React.useEffect(() => {
+    setLikeCount(post.likes || 0);
+    setIsResolved(post.is_resolved || false);
+  }, [post.likes, post.is_resolved]);
+
+  // Sync comments from parent when the underlying post changes (navigation / re-fetch)
+  React.useEffect(() => {
+    setComments(post.comments || []);
+  }, [post.id]);
+
+  const isOwnPost =
+    (currentUserId && post.user_id && post.user_id === currentUserId) ||
+    (currentUserName && post.author && post.author === currentUserName);
 
   const handleLike = () => {
     setLiked(!liked);
@@ -67,6 +111,55 @@ const CommunityPost = ({
     onShare?.(post.id);
   };
 
+  const handleResolve = async () => {
+    const newResolved = !isResolved;
+    setIsResolved(newResolved);
+    setResolving(true);
+    try {
+      const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
+      const res = await fetch(`${API_URL}/community/posts/${post.id}/resolve?resolved=${newResolved}&user_id=${encodeURIComponent(currentUserId || '')}`, { method: 'POST' });
+      if (!res.ok) setIsResolved(!newResolved); // revert on error
+    } catch (e) {
+      setIsResolved(!newResolved);
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const handleSubmitReport = async () => {
+    if (!reportReason) { toast.error('Please select a reason'); return; }
+    if (!currentUserId) { toast.error('You must be logged in to report'); return; }
+    setSubmittingReport(true);
+    try {
+      const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
+      const res = await fetch(`${API_URL}/community/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reporter_id: currentUserId,
+          reporter_name: currentUserName || 'Community Member',
+          reported_user_id: post.user_id || 'anonymous',
+          reported_user_name: post.author || 'Anonymous',
+          post_id: post.id,
+          reason: reportReason,
+          description: reportDescription.trim() || null,
+        }),
+      });
+      if (res.ok) {
+        toast.success('Report submitted. Thank you for keeping the community safe.');
+        setShowReportDialog(false);
+        setReportReason('');
+        setReportDescription('');
+      } else {
+        toast.error('Failed to submit report. Please try again.');
+      }
+    } catch (e) {
+      toast.error('Network error. Please try again.');
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
   const getPostTypeColor = () => {
     switch (post.type) {
       case 'emergency': return 'bg-red-600 text-white';
@@ -91,24 +184,45 @@ const CommunityPost = ({
   const mediaFiles = post.media || [];
   const hasMedia = mediaFiles.length > 0;
 
+  const typeBorderColor = {
+    emergency: 'border-l-4 border-l-red-600',
+    help:      'border-l-4 border-l-orange-500',
+    offer:     'border-l-4 border-l-green-500',
+    alert:     'border-l-4 border-l-yellow-500',
+    general:   'border-l-4 border-l-blue-400',
+  }[post.type] || 'border-l-4 border-l-blue-400';
+
   return (
     <>
-      <Card className="mb-4 overflow-hidden">
+      <Card className={cn('mb-3 overflow-hidden shadow-sm hover:shadow-md transition-shadow', typeBorderColor)}>
         <CardContent className="p-0">
           {/* Post Header */}
           <div className="p-4 pb-3">
             <div className="flex justify-between items-start">
               <div className="flex items-center gap-3 flex-1">
                 <Avatar>
-                  <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author}`} />
-                  <AvatarFallback>{post.author[0]}</AvatarFallback>
+                  <AvatarImage src={post.author_photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author}`} />
+                  <AvatarFallback>{post.author?.[0] || '?'}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-semibold text-sm">{post.author}</h4>
+                    {authorBadge && authorBadge.name !== 'Newcomer' && (
+                      <span className={cn(
+                        "text-[10px] font-semibold px-1.5 py-0.5 rounded-full border",
+                        BADGE_STYLE[authorBadge.name] || 'bg-gray-100 text-gray-600 border-gray-200'
+                      )}>
+                        {authorBadge.emoji} {authorBadge.name}
+                      </span>
+                    )}
                     <Badge className={cn("text-xs", getPostTypeColor())}>
                       {getPostTypeLabel()}
                     </Badge>
+                    {isResolved && (
+                      <Badge className="text-xs bg-green-100 text-green-700 border border-green-300">
+                        ✓ Resolved
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>{timeAgo}</span>
@@ -153,9 +267,9 @@ const CommunityPost = ({
                         <Bookmark className="w-4 h-4 mr-2" />
                         {saved ? 'Unsave' : 'Save Post'}
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
-                        <Flag className="w-4 h-4 mr-2" />
-                        Report Post
+                      <DropdownMenuItem onClick={() => setShowReportDialog(true)} className="text-red-600">
+                        <ShieldAlert className="w-4 h-4 mr-2" />
+                        Report User / Post
                       </DropdownMenuItem>
                     </>
                   )}
@@ -174,6 +288,23 @@ const CommunityPost = ({
               <h3 className="font-semibold text-base mb-2">{post.title}</h3>
             )}
             <p className="text-sm whitespace-pre-wrap">{post.content}</p>
+
+            {/* AI Image Analysis Badge */}
+            {post.image_analysis && post.image_analysis.disaster_type !== 'none' && (
+              <div className="mt-2 flex items-center gap-2 p-2 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
+                <span className="text-base">
+                  {{'fire':'🔥','flood':'🌊','earthquake':'🌍','cyclone':'🌀','landslide':'🏔️'}[post.image_analysis.disaster_type] || '⚠️'}
+                </span>
+                <div>
+                  <p className="text-xs font-semibold text-red-700 dark:text-red-400 capitalize">
+                    {post.image_analysis.disaster_type} detected in image · {post.image_analysis.severity} severity
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {Math.round((post.image_analysis.confidence || 0) * 100)}% confidence · AI-analyzed
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Tags */}
             {post.tags?.length > 0 && (
@@ -195,9 +326,15 @@ const CommunityPost = ({
               mediaFiles.length === 2 && "grid-cols-2",
               mediaFiles.length >= 3 && "grid-cols-2"
             )}>
-              {mediaFiles.slice(0, 4).map((media, index) => (
+              {mediaFiles.slice(0, 4).map((media, index) => {
+                const mediaSrc = media.url
+                  ? (media.url.startsWith('http') ? media.url : `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}${media.url}`)
+                  : (media.preview || '');
+                const mediaType = media.type || 'image/jpeg';
+                const mediaAnalysis = media.analysis?.analysis;
+                return (
                 <div
-                  key={media.id}
+                  key={media.id || media.url || index}
                   className={cn(
                     "relative rounded-lg overflow-hidden bg-muted cursor-pointer",
                     mediaFiles.length === 1 && "h-96",
@@ -210,11 +347,11 @@ const CommunityPost = ({
                   }}
                 >
                   {/* Image */}
-                  {media.type.startsWith('image/') && (
+                  {mediaType.startsWith('image/') && (
                     <>
                       <img
-                        src={media.preview}
-                        alt={media.name}
+                        src={mediaSrc}
+                        alt={media.name || 'photo'}
                         className="w-full h-full object-cover"
                       />
                       {media.geotag && (
@@ -226,14 +363,23 @@ const CommunityPost = ({
                           GPS
                         </Badge>
                       )}
+                      {/* AI analysis badge */}
+                      {mediaAnalysis && mediaAnalysis.disaster_type !== 'none' && (
+                        <Badge
+                          className="absolute bottom-2 left-2 text-xs text-white border-0"
+                          style={{ backgroundColor: { low: '#eab308', medium: '#f97316', high: '#ef4444', critical: '#991b1b' }[mediaAnalysis.severity] || '#6b7280' }}
+                        >
+                          {mediaAnalysis.disaster_type} · {mediaAnalysis.severity}
+                        </Badge>
+                      )}
                     </>
                   )}
 
                   {/* Video */}
-                  {media.type.startsWith('video/') && (
+                  {mediaType.startsWith('video/') && (
                     <>
                       <video
-                        src={media.preview}
+                        src={mediaSrc}
                         className="w-full h-full object-cover"
                       />
                       <div className="absolute inset-0 flex items-center justify-center bg-black/20">
@@ -252,16 +398,16 @@ const CommunityPost = ({
                   )}
 
                   {/* Audio */}
-                  {media.type.startsWith('audio/') && (
+                  {mediaType.startsWith('audio/') && (
                     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500">
                       <Volume2 className="w-12 h-12 text-white" />
                     </div>
                   )}
 
                   {/* Other files */}
-                  {!media.type.startsWith('image/') && 
-                   !media.type.startsWith('video/') && 
-                   !media.type.startsWith('audio/') && (
+                  {!mediaType.startsWith('image/') && 
+                   !mediaType.startsWith('video/') && 
+                   !mediaType.startsWith('audio/') && (
                     <div className="w-full h-full flex flex-col items-center justify-center bg-muted">
                       <ImageIcon className="w-8 h-8 text-muted-foreground mb-2" />
                       <p className="text-xs text-muted-foreground text-center px-2 truncate w-full">
@@ -279,74 +425,114 @@ const CommunityPost = ({
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
-          {/* Post Stats */}
-          <div className="px-4 py-2 border-t flex items-center justify-between text-xs text-muted-foreground">
-            <div className="flex items-center gap-3">
-              {likeCount > 0 && (
-                <span className="flex items-center gap-1">
-                  <Heart className="w-3 h-3 fill-red-500 text-red-500" />
-                  {likeCount}
-                </span>
-              )}
+          {/* Post Stats — always visible */}
+          <div className="px-4 py-2 border-t flex items-center justify-between">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <button
+                onClick={handleLike}
+                className={cn(
+                  'flex items-center gap-1 transition-colors hover:text-red-500',
+                  liked && 'text-red-500 font-semibold'
+                )}
+              >
+                <Heart className={cn('w-3.5 h-3.5', liked && 'fill-current')} />
+                <span>{likeCount}</span>
+                <span className="hidden sm:inline">{likeCount === 1 ? 'like' : 'likes'}</span>
+              </button>
+              <button
+                onClick={() => setShowComments(!showComments)}
+                className="flex items-center gap-1 transition-colors hover:text-primary"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>{post.comments_count != null ? post.comments_count : comments.length}</span>
+                <span className="hidden sm:inline">{(post.comments_count != null ? post.comments_count : comments.length) === 1 ? 'comment' : 'comments'}</span>
+              </button>
             </div>
-            <div className="flex items-center gap-3">
-              {comments.length > 0 && (
-                <span>{comments.length} {comments.length === 1 ? 'comment' : 'comments'}</span>
-              )}
-            </div>
+            {saved && (
+              <span className="text-xs text-blue-500 flex items-center gap-1">
+                <Bookmark className="w-3 h-3 fill-current" /> Saved
+              </span>
+            )}
           </div>
 
           {/* Post Actions */}
-          <div className="px-4 py-2 border-t flex items-center justify-around">
+          <div className="px-2 py-1 border-t flex items-center">
             <Button
               variant="ghost"
               size="sm"
               onClick={handleLike}
               className={cn(
-                "gap-2 flex-1",
-                liked && "text-red-500 hover:text-red-600"
+                'gap-1.5 flex-1 text-xs h-9',
+                liked && 'text-red-500 hover:text-red-600'
               )}
             >
-              <Heart className={cn("w-4 h-4", liked && "fill-current")} />
-              <span className="font-medium">{liked ? 'Liked' : 'Like'}</span>
+              <Heart className={cn('w-3.5 h-3.5', liked && 'fill-current')} />
+              <span>{liked ? 'Liked' : 'Like'}</span>
             </Button>
 
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setShowComments(!showComments)}
-              className="gap-2 flex-1"
+              className={cn('gap-1.5 flex-1 text-xs h-9', showComments && 'text-primary')}
             >
-              <MessageSquare className="w-4 h-4" />
-              <span className="font-medium">Comment</span>
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Comment</span>
             </Button>
+
+            {!isOwnPost && (post.type === 'help' || post.type === 'offer' || post.type === 'emergency' || post.type === 'alert') && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDM(true)}
+                className="gap-1.5 flex-1 text-xs h-9 text-blue-600 hover:text-blue-700"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span>Message</span>
+              </Button>
+            )}
 
             <Button
               variant="ghost"
               size="sm"
               onClick={handleShare}
-              className="gap-2 flex-1"
+              className="gap-1.5 flex-1 text-xs h-9"
             >
-              <Share2 className="w-4 h-4" />
-              <span className="font-medium">Share</span>
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Share</span>
             </Button>
 
             <Button
               variant="ghost"
               size="sm"
               onClick={handleSave}
-              className={cn(
-                "gap-2 flex-1",
-                saved && "text-blue-500"
-              )}
+              className={cn('gap-1.5 flex-1 text-xs h-9', saved && 'text-blue-500')}
             >
-              <Bookmark className={cn("w-4 h-4", saved && "fill-current")} />
-              <span className="font-medium">{saved ? 'Saved' : 'Save'}</span>
+              <Bookmark className={cn('w-3.5 h-3.5', saved && 'fill-current')} />
+              <span>{saved ? 'Saved' : 'Save'}</span>
             </Button>
+
+            {/* Resolve button — only for post owner on help/offer/emergency posts */}
+            {isOwnPost && (post.type === 'help' || post.type === 'offer' || post.type === 'emergency') && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleResolve}
+                disabled={resolving}
+                className={cn(
+                  'gap-1.5 flex-1 text-xs h-9',
+                  isResolved ? 'text-green-600 hover:text-green-700' : 'text-gray-500 hover:text-green-600'
+                )}
+              >
+                <span className="w-3.5 h-3.5 flex items-center justify-center font-bold">{isResolved ? '✓' : '○'}</span>
+                <span>{isResolved ? 'Resolved' : 'Resolve'}</span>
+              </Button>
+            )}
           </div>
 
           {/* Comments Section */}
@@ -356,11 +542,80 @@ const CommunityPost = ({
                 postId={post.id}
                 comments={comments}
                 onCommentsChange={setComments}
+                currentUserId={currentUserId}
+                currentUserName={currentUserName}
+                currentUserPhoto={currentUserPhoto}
               />
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Direct Message Panel */}
+      {showDM && (
+        <DirectMessagePanel
+          isOpen={showDM}
+          onClose={() => setShowDM(false)}
+          myUserId={currentUserId}
+          myName={currentUserName}
+          myPhoto={currentUserPhoto}
+          initialPartner={{ id: post.user_id, name: post.author, photo: post.author_photo }}
+          initialPostId={post.id}
+          initialPostSnippet={post.content ? post.content.slice(0, 60) : null}
+        />
+      )}
+
+      {/* Report User Dialog */}
+      <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <ShieldAlert className="w-5 h-5" />
+              Report User / Post
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              You are reporting <strong>{post.author}</strong>'s post. Our team will review and take action within 24 hours.
+            </p>
+            <div className="space-y-1.5">
+              <Label>Reason <span className="text-red-500">*</span></Label>
+              <Select value={reportReason} onValueChange={setReportReason}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a reason..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="misinformation">🚫 Misinformation / Fake News</SelectItem>
+                  <SelectItem value="false_emergency">🔴 False Emergency Alert</SelectItem>
+                  <SelectItem value="spam">📢 Spam</SelectItem>
+                  <SelectItem value="harassment">⚠️ Harassment / Bullying</SelectItem>
+                  <SelectItem value="inappropriate">🔞 Inappropriate Content</SelectItem>
+                  <SelectItem value="other">📝 Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Additional Details (Optional)</Label>
+              <Textarea
+                placeholder="Describe why this post is problematic..."
+                value={reportDescription}
+                onChange={(e) => setReportDescription(e.target.value)}
+                className="min-h-[80px]"
+                maxLength={500}
+              />
+              <p className="text-xs text-muted-foreground text-right">{reportDescription.length}/500</p>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => { setShowReportDialog(false); setReportReason(''); setReportDescription(''); }}>
+              Cancel
+            </Button>
+            <Button variant="destructive" className="flex-1" onClick={handleSubmitReport} disabled={!reportReason || submittingReport}>
+              {submittingReport ? 'Submitting...' : 'Submit Report'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Media Modal */}
       <Dialog open={showMediaModal} onOpenChange={setShowMediaModal}>
@@ -369,28 +624,34 @@ const CommunityPost = ({
             <DialogTitle>Media Viewer</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {mediaFiles[selectedMediaIndex] && (
+            {mediaFiles[selectedMediaIndex] && (() => {
+              const sel = mediaFiles[selectedMediaIndex];
+              const selType = sel.type || 'image/jpeg';
+              const selSrc = sel.url
+                ? (sel.url.startsWith('http') ? sel.url : `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}${sel.url}`)
+                : (sel.preview || '');
+              return (
               <>
                 {/* Current Media */}
                 <div className="relative rounded-lg overflow-hidden bg-black">
-                  {mediaFiles[selectedMediaIndex].type.startsWith('image/') && (
+                  {selType.startsWith('image/') && (
                     <img
-                      src={mediaFiles[selectedMediaIndex].preview}
-                      alt={mediaFiles[selectedMediaIndex].name}
+                      src={selSrc}
+                      alt={sel.name}
                       className="w-full max-h-[70vh] object-contain"
                     />
                   )}
-                  {mediaFiles[selectedMediaIndex].type.startsWith('video/') && (
+                  {selType.startsWith('video/') && (
                     <video
-                      src={mediaFiles[selectedMediaIndex].preview}
+                      src={selSrc}
                       controls
                       className="w-full max-h-[70vh]"
                     />
                   )}
-                  {mediaFiles[selectedMediaIndex].type.startsWith('audio/') && (
+                  {selType.startsWith('audio/') && (
                     <div className="p-12 flex items-center justify-center">
                       <audio
-                        src={mediaFiles[selectedMediaIndex].preview}
+                        src={selSrc}
                         controls
                         className="w-full"
                       />
@@ -398,21 +659,32 @@ const CommunityPost = ({
                   )}
 
                   {/* Geotag info */}
-                  {mediaFiles[selectedMediaIndex].geotag && (
+                  {sel.geotag && sel.geotag.latitude && (
                     <div className="absolute bottom-4 left-4 bg-black/70 text-white p-3 rounded-lg text-sm">
                       <div className="flex items-center gap-2 mb-1">
                         <MapPin className="w-4 h-4" />
                         <span className="font-semibold">Location Data</span>
                       </div>
                       <p className="text-xs">
-                        Lat: {mediaFiles[selectedMediaIndex].geotag.latitude.toFixed(6)}
+                        Lat: {sel.geotag.latitude.toFixed(6)}
                       </p>
                       <p className="text-xs">
-                        Lng: {mediaFiles[selectedMediaIndex].geotag.longitude.toFixed(6)}
+                        Lng: {sel.geotag.longitude.toFixed(6)}
                       </p>
-                      <p className="text-xs">
-                        Accuracy: ±{mediaFiles[selectedMediaIndex].geotag.accuracy.toFixed(0)}m
-                      </p>
+                      {sel.geotag.accuracy && (
+                        <p className="text-xs">
+                          Accuracy: ±{sel.geotag.accuracy.toFixed(0)}m
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* AI Analysis overlay */}
+                  {sel.analysis?.analysis && sel.analysis.analysis.disaster_type !== 'none' && (
+                    <div className="absolute top-4 right-4 bg-black/70 text-white p-3 rounded-lg text-sm">
+                      <p className="font-semibold capitalize">{sel.analysis.analysis.disaster_type} detected</p>
+                      <p className="text-xs">Severity: {sel.analysis.analysis.severity}</p>
+                      <p className="text-xs">Confidence: {Math.round(sel.analysis.analysis.confidence * 100)}%</p>
                     </div>
                   )}
                 </div>
@@ -420,9 +692,14 @@ const CommunityPost = ({
                 {/* Thumbnails */}
                 {mediaFiles.length > 1 && (
                   <div className="flex gap-2 overflow-x-auto pb-2">
-                    {mediaFiles.map((media, index) => (
+                    {mediaFiles.map((media, index) => {
+                      const thumbType = media.type || 'image/jpeg';
+                      const thumbSrc = media.url
+                        ? (media.url.startsWith('http') ? media.url : `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}${media.url}`)
+                        : (media.preview || '');
+                      return (
                       <button
-                        key={media.id}
+                        key={media.id || media.url || index}
                         onClick={() => setSelectedMediaIndex(index)}
                         className={cn(
                           "flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all",
@@ -431,29 +708,31 @@ const CommunityPost = ({
                             : "border-transparent opacity-60 hover:opacity-100"
                         )}
                       >
-                        {media.type.startsWith('image/') && (
+                        {thumbType.startsWith('image/') && (
                           <img
-                            src={media.preview}
+                            src={thumbSrc}
                             alt={media.name}
                             className="w-full h-full object-cover"
                           />
                         )}
-                        {media.type.startsWith('video/') && (
+                        {thumbType.startsWith('video/') && (
                           <div className="w-full h-full bg-black flex items-center justify-center">
                             <Play className="w-6 h-6 text-white" />
                           </div>
                         )}
-                        {media.type.startsWith('audio/') && (
+                        {thumbType.startsWith('audio/') && (
                           <div className="w-full h-full bg-purple-500 flex items-center justify-center">
                             <Volume2 className="w-6 h-6 text-white" />
                           </div>
                         )}
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </>
-            )}
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>

@@ -26,7 +26,8 @@ const Comment = ({
   onDelete, 
   onEdit,
   depth = 0,
-  currentUserId = 'current-user' // Mock current user
+  currentUserId,
+  currentUserName,
 }) => {
   const [isReplying, setIsReplying] = useState(false);
   const [replyText, setReplyText] = useState('');
@@ -49,7 +50,8 @@ const Comment = ({
     }
   };
 
-  const isOwnComment = comment.userId === currentUserId;
+  const isOwnComment = (currentUserId && comment.userId && comment.userId === currentUserId)
+    || (currentUserName && comment.author && comment.author === currentUserName);
   const timeAgo = getTimeAgo(comment.timestamp);
 
   return (
@@ -59,8 +61,8 @@ const Comment = ({
     )}>
       <div className="flex gap-3">
         <Avatar className="h-8 w-8">
-          <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${comment.author}`} />
-          <AvatarFallback>{comment.author[0]}</AvatarFallback>
+          <AvatarImage src={comment.author_photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${comment.author}`} />
+          <AvatarFallback>{comment.author?.[0] || '?'}</AvatarFallback>
         </Avatar>
 
         <div className="flex-1 space-y-2">
@@ -156,13 +158,16 @@ const Comment = ({
               {comment.likes > 0 && comment.likes}
             </button>
 
-            <button
-              onClick={() => setIsReplying(!isReplying)}
-              className="flex items-center gap-1 text-muted-foreground hover:text-primary transition-colors"
-            >
-              <Reply className="w-4 h-4" />
-              Reply
-            </button>
+            {/* Hide Reply button on own comments */}
+            {!isOwnComment && (
+              <button
+                onClick={() => setIsReplying(!isReplying)}
+                className="flex items-center gap-1 text-muted-foreground hover:text-primary transition-colors"
+              >
+                <Reply className="w-4 h-4" />
+                Reply
+              </button>
+            )}
 
             {comment.replies?.length > 0 && (
               <button
@@ -215,6 +220,7 @@ const Comment = ({
                   onEdit={onEdit}
                   depth={depth + 1}
                   currentUserId={currentUserId}
+                  currentUserName={currentUserName}
                 />
               ))}
             </div>
@@ -225,7 +231,7 @@ const Comment = ({
   );
 };
 
-const CommentSection = ({ postId, comments: initialComments = [], onCommentsChange }) => {
+const CommentSection = ({ postId, comments: initialComments = [], onCommentsChange, currentUserId, currentUserName, currentUserPhoto }) => {
   const [comments, setComments] = useState(initialComments);
   const [newComment, setNewComment] = useState('');
   const [sortBy, setSortBy] = useState('newest'); // newest, oldest, popular
@@ -236,11 +242,15 @@ const CommentSection = ({ postId, comments: initialComments = [], onCommentsChan
     try {
       const response = await axios.post(`${API_URL}/community/posts/${postId}/comments`, {
         content: newComment.trim(),
-        parent_id: null
+        parent_id: null,
+        author: currentUserName || 'Community Member',
+        author_id: currentUserId || null,
+        author_photo: currentUserPhoto || null,
       });
 
       if (response.data.success && response.data.comment) {
-        const updatedComments = [response.data.comment, ...comments];
+        const newEntry = { ...response.data.comment, author_photo: currentUserPhoto || null };
+        const updatedComments = [newEntry, ...comments];
         setComments(updatedComments);
         onCommentsChange?.(updatedComments);
         setNewComment('');
@@ -256,11 +266,13 @@ const CommentSection = ({ postId, comments: initialComments = [], onCommentsChan
     try {
       const response = await axios.post(`${API_URL}/community/posts/${postId}/comments`, {
         content: replyText,
-        parent_id: parentCommentId
+        parent_id: parentCommentId,
+        author: currentUserName || 'Community Member',
+        author_photo: currentUserPhoto || null,
       });
 
       if (response.data.success && response.data.comment) {
-        const reply = response.data.comment;
+        const reply = { ...response.data.comment, author_photo: currentUserPhoto || null };
 
         const addReplyToComment = (commentsList) => {
           return commentsList.map(comment => {
@@ -396,7 +408,8 @@ const CommentSection = ({ postId, comments: initialComments = [], onCommentsChan
       {/* New Comment Input */}
       <div className="flex gap-3">
         <Avatar className="h-8 w-8">
-          <AvatarFallback>ME</AvatarFallback>
+          <AvatarImage src={currentUserPhoto || undefined} />
+          <AvatarFallback>{currentUserName?.[0]?.toUpperCase() || 'ME'}</AvatarFallback>
         </Avatar>
         <div className="flex-1 space-y-2">
           <Textarea
@@ -432,6 +445,8 @@ const CommentSection = ({ postId, comments: initialComments = [], onCommentsChan
             onLike={likeComment}
             onDelete={deleteComment}
             onEdit={editComment}
+            currentUserId={currentUserId}
+            currentUserName={currentUserName}
           />
         ))}
       </div>

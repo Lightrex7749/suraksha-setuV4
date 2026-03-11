@@ -12,6 +12,15 @@ const QUICK_ACTIONS = [
 
 const MAX_HISTORY = 6;
 
+function detectLanguage(text = '') {
+    if (!text) return 'en-IN';
+    if (/[\u0900-\u097F]/.test(text)) return 'hi-IN';
+    if (/[\u0B80-\u0BFF]/.test(text)) return 'ta-IN';
+    if (/[\u0C00-\u0C7F]/.test(text)) return 'te-IN';
+    if (/[\u0980-\u09FF]/.test(text)) return 'bn-IN';
+    return 'en-IN';
+}
+
 function confidenceLabel(score) {
     if (score >= 0.8) return { level: 'high', text: `${Math.round(score * 100)}% confident` };
     if (score >= 0.5) return { level: 'medium', text: `${Math.round(score * 100)}% confident` };
@@ -48,13 +57,16 @@ export default function StudentChat() {
         setLoading(true);
 
         try {
+            const detectedLang = detectLanguage(userMsg.text);
             const res = await fetch(`${API_URL}/ai`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     query: userMsg.text,
                     role: 'student',
-                    locale: navigator.language?.startsWith('hi') ? 'hi' : 'en',
+                    language: detectedLang,
+                    locale: detectedLang,
+                    context: { language: detectedLang, locale: detectedLang },
                 }),
             });
             const data = await res.json();
@@ -104,7 +116,7 @@ export default function StudentChat() {
 
                 setLoading(true);
                 try {
-                    const res = await fetch(`${API_URL}/ai/voice`, { method: 'POST', body: formData });
+                    const res = await fetch(`${API_URL}/ai/voice?role=student`, { method: 'POST', body: formData });
                     const data = await res.json();
                     if (data.transcript) {
                         // Show transcript as user message

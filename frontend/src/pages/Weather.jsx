@@ -244,10 +244,10 @@ const Weather = () => {
   const windSpeed = Math.round(current.wind_speed || 12);
   const windDirection = current.wind_direction || 'NW';
   const pressure = Math.round(current.pressure || 1008);
-  const aqiValue = aqiData?.current?.aqi || 142;
-  const aqiStatus = aqiData?.current?.category || 'Moderate';
-  const pm25 = aqiData?.current?.pollutants?.pm25 || aqiData?.current?.pm25 || 45;
-  const pm10 = aqiData?.current?.pollutants?.pm10 || aqiData?.current?.pm10 || 85;
+  const aqiValue = aqiData?.aqi || aqiData?.current?.aqi || 142;
+  const aqiStatus = aqiData?.aqi_label || aqiData?.current?.category || 'Moderate';
+  const pm25 = aqiData?.pm25 || aqiData?.current?.pm25 || 45;
+  const pm10 = aqiData?.pm10 || aqiData?.current?.pm10 || 85;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">

@@ -194,15 +194,25 @@ class OpenAIClient:
                 kwargs: Dict[str, Any] = {
                     "model": "whisper-1",
                     "file": f,
-                    "response_format": "text",
+                    "response_format": "verbose_json",
                     "prompt": "Disaster safety, weather, earthquake, cyclone, flood, India.",
                 }
                 if language:
                     kwargs["language"] = language
                 transcript = await self.client.audio.transcriptions.create(**kwargs)
             await self._record_usage(500, "whisper-1", "whisper")
-            text = transcript if isinstance(transcript, str) else transcript.text
-            return {"text": text, "error": None}
+            if isinstance(transcript, str):
+                return {"text": transcript, "language": language or "unknown", "error": None}
+
+            text = getattr(transcript, "text", None) or ""
+            detected_language = getattr(transcript, "language", None) or language or "unknown"
+            duration = getattr(transcript, "duration", None)
+            return {
+                "text": text,
+                "language": detected_language,
+                "duration": duration,
+                "error": None,
+            }
         except Exception as e:
             logger.error(f"Whisper error: {e}")
             return {"error": str(e), "text": None}

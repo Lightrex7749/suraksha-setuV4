@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Plus, Filter, Search, TrendingUp, 
+  Plus, Search, TrendingUp, 
   Award, Heart, Users, MapPin, 
   AlertCircle, HelpCircle, Megaphone,
-  Clock, ThumbsUp as ThumbsUpIcon, Loader2
+  Loader2, Shield, Star, Hash, Map,
+  MessageCircle, Bell, CheckCheck, Zap,
+  Activity, ChevronRight, Sparkles
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,13 +23,28 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import CommunityPost from '@/components/community/CommunityPost';
 import CreatePostModal from '@/components/community/CreatePostModal';
+import CommunityMap from '@/components/community/CommunityMap';
+import DirectMessagePanel from '@/components/community/DirectMessagePanel';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 
 const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
 
+// Badge visual config — must mirror backend _compute_badge
+const BADGE_CONFIG = {
+  Guardian:  { emoji: '🌟', label: 'Guardian',  bg: 'bg-purple-100 text-purple-700 border-purple-200',  ring: 'ring-purple-400' },
+  Saviour:   { emoji: '🛡️', label: 'Saviour',   bg: 'bg-indigo-100 text-indigo-700 border-indigo-200',  ring: 'ring-indigo-400' },
+  Hero:      { emoji: '🦸', label: 'Hero',      bg: 'bg-blue-100   text-blue-700   border-blue-200',    ring: 'ring-blue-400'   },
+  Responder: { emoji: '🤝', label: 'Responder', bg: 'bg-green-100  text-green-700  border-green-200',   ring: 'ring-green-400'  },
+  Helper:    { emoji: '💚', label: 'Helper',    bg: 'bg-teal-100   text-teal-700   border-teal-200',    ring: 'ring-teal-400'   },
+  Newcomer:  { emoji: '🌱', label: 'Newcomer',  bg: 'bg-gray-100   text-gray-600   border-gray-200',    ring: 'ring-gray-300'   },
+};
+
 const Community = () => {
+  const { user } = useAuth();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [showDMPanel, setShowDMPanel] = useState(false);
   const [posts, setPosts] = useState([]);
   const [filteredPosts, setFilteredPosts] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -36,16 +53,35 @@ const Community = () => {
   const [activeTab, setActiveTab] = useState('feed');
   const [loading, setLoading] = useState(true);
 
+  // Pincode filter
+  const [pincodeInput, setPincodeInput] = useState('');
+  const [activePin, setActivePin] = useState('');
+
+  // User GPS for map
+  const [userLocation, setUserLocation] = useState(null);
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => setUserLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+        () => {}
+      );
+    }
+  }, []);
+
+  // Sidebar live data
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [trendingTags, setTrendingTags] = useState([]);
+  const [urgentPosts, setUrgentPosts] = useState([]);
+  const [badgeByUser, setBadgeByUser] = useState({});
+
   // Fetch posts from backend
-  const fetchPosts = async () => {
+  const fetchPosts = async (pin = activePin) => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}/community/posts`, {
-        params: {
-          type: filterType !== 'all' ? filterType : undefined,
-          limit: 50
-        }
-      });
+      const params = { limit: 50 };
+      if (filterType !== 'all') params.type = filterType;
+      if (pin) params.pincode = pin;
+      const response = await axios.get(`${API_URL}/community/posts`, { params });
       setPosts(response.data.posts || []);
       setFilteredPosts(response.data.posts || []);
     } catch (error) {
@@ -57,10 +93,64 @@ const Community = () => {
     }
   };
 
-  // Initial fetch
+  const fetchLeaderboard = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/community/leaderboard`);
+      const board = res.data.leaderboard || [];
+      setLeaderboard(board);
+      // Build badge lookup: user_id → badge info
+      const map = {};
+      board.forEach(u => { if (u.user_id) map[u.user_id] = u.badge; });
+      setBadgeByUser(map);
+    } catch (e) {
+      console.error('Leaderboard fetch error:', e);
+    }
+  };
+
+  const fetchTrending = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/community/trending-tags`);
+      setTrendingTags(res.data.tags || []);
+    } catch (e) {
+      console.error('Trending tags fetch error:', e);
+    }
+  };
+
+  const fetchUrgentPosts = async () => {
+    try {
+      const [helpRes, offerRes] = await Promise.all([
+        axios.get(`${API_URL}/community/posts`, { params: { type: 'help', limit: 3 } }),
+        axios.get(`${API_URL}/community/posts`, { params: { type: 'offer', limit: 3 } }),
+      ]);
+      const helps = (helpRes.data.posts || []).slice(0, 3);
+      const offers = (offerRes.data.posts || []).slice(0, 2);
+      setUrgentPosts([...helps, ...offers].slice(0, 5));
+    } catch (e) {
+      console.error('Urgent posts fetch error:', e);
+    }
+  };
+
   useEffect(() => {
     fetchPosts();
   }, [filterType]);
+
+  useEffect(() => {
+    fetchLeaderboard();
+    fetchTrending();
+    fetchUrgentPosts();
+  }, []);
+
+  const applyPin = () => {
+    const pin = pincodeInput.trim();
+    setActivePin(pin);
+    fetchPosts(pin);
+  };
+
+  const clearPin = () => {
+    setPincodeInput('');
+    setActivePin('');
+    fetchPosts('');
+  };
 
   // Filter and search posts
   useEffect(() => {
@@ -105,17 +195,24 @@ const Community = () => {
     try {
       const response = await axios.post(`${API_URL}/community/posts`, newPost);
       if (response.data.success && response.data.post) {
-        setPosts([response.data.post, ...posts]);
+        setPosts((prev) => [response.data.post, ...prev]);
+        toast.success('Post published!');
       }
     } catch (error) {
       console.error('Error creating post:', error);
+      toast.error('Failed to publish post');
     }
   };
 
   const handlePostLike = async (postId, liked) => {
     try {
       const response = await axios.post(`${API_URL}/community/posts/${postId}/like`, null, {
-        params: { unlike: !liked }
+        params: {
+          unlike: !liked,
+          liker_id: user?.id,
+          liker_name: user?.name || user?.displayName,
+          liker_photo: user?.photoURL,
+        }
       });
       if (response.data.success) {
         setPosts(posts.map(post => 
@@ -164,7 +261,11 @@ const Community = () => {
   };
 
   const savedPosts = posts.filter(post => post.savedByUser);
-  const myPosts = posts.filter(post => post.author === 'You');
+  const myPosts = posts.filter(post =>
+    (user?.id && post.user_id === user.id) ||
+    (user?.name && post.author === user.name) ||
+    (user?.email && post.author === user.email)
+  );
 
   const getStatsData = () => {
     return {
@@ -178,131 +279,182 @@ const Community = () => {
   const stats = getStatsData();
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Community Hub</h1>
-          <p className="text-muted-foreground">Connect, report, and help your neighbors</p>
-        </div>
-        <Button 
-          className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-          onClick={() => setIsCreateModalOpen(true)}
-        >
-          <Plus className="w-4 h-4" /> Create Post
-        </Button>
-      </div>
+    <div className="max-w-7xl mx-auto space-y-0">
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
-              <Users className="w-5 h-5 text-blue-600" />
-            </div>
+      {/* ── Hero Banner ─────────────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 text-white mb-6 shadow-xl">
+        {/* Decorative circles */}
+        <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-white/5" />
+        <div className="absolute -bottom-8 -left-8 w-36 h-36 rounded-full bg-white/5" />
+
+        <div className="relative px-6 py-8 md:px-10">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            {/* Left: Title + desc + stats */}
             <div>
-              <p className="text-2xl font-bold">{stats.totalPosts}</p>
-              <p className="text-xs text-muted-foreground">Total Posts</p>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="bg-white/20 p-2 rounded-xl">
+                  <Users className="w-6 h-6" />
+                </div>
+                <span className="text-white/70 text-sm font-semibold uppercase tracking-wider">Community Hub</span>
+              </div>
+              <h1 className="text-3xl md:text-4xl font-bold mb-2 leading-tight">
+                Help Each Other.<br className="hidden sm:block" /> Stay Connected.
+              </h1>
+              <p className="text-white/70 text-sm mb-5">
+                Report emergencies, offer resources, and support your neighbors.
+              </p>
+
+              {/* Inline stats */}
+              <div className="flex flex-wrap gap-4">
+                {[
+                  { icon: Activity, label: 'Posts', value: stats.totalPosts, color: 'bg-white/15' },
+                  { icon: AlertCircle, label: 'Needs Help', value: stats.totalHelps, color: 'bg-red-500/40' },
+                  { icon: Sparkles, label: 'Offering', value: stats.totalOffers, color: 'bg-green-500/40' },
+                  { icon: Zap, label: 'Alerts', value: stats.totalAlerts, color: 'bg-orange-500/40' },
+                ].map(({ icon: Icon, label, value, color }) => (
+                  <div key={label} className={cn('flex items-center gap-2 px-3 py-2 rounded-xl', color)}>
+                    <Icon className="w-4 h-4" />
+                    <span className="font-bold text-base">{value}</span>
+                    <span className="text-white/70 text-xs">{label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-lg">
-              <HelpCircle className="w-5 h-5 text-red-600" />
+
+            {/* Right: CTA buttons */}
+            <div className="flex flex-col gap-2 min-w-[180px]">
+              <Button
+                size="lg"
+                className="bg-white text-indigo-700 hover:bg-white/90 font-semibold shadow-lg gap-2"
+                onClick={() => setIsCreateModalOpen(true)}
+              >
+                <Plus className="w-4 h-4" /> Create Post
+              </Button>
+              <Button
+                size="sm"
+                className="bg-white/20 hover:bg-white/30 border border-white/30 gap-2"
+                onClick={() => setShowDMPanel(true)}
+              >
+                <MessageCircle className="w-4 h-4" /> Messages
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-white/70 hover:text-white hover:bg-white/10 gap-2 justify-start"
+                onClick={() => setIsCreateModalOpen(true)}
+              >
+                <AlertCircle className="w-4 h-4 text-red-300" /> Report Emergency
+              </Button>
             </div>
-            <div>
-              <p className="text-2xl font-bold">{stats.totalHelps}</p>
-              <p className="text-xs text-muted-foreground">Help Needed</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 bg-green-100 dark:bg-green-900/20 rounded-lg">
-              <Megaphone className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{stats.totalOffers}</p>
-              <p className="text-xs text-muted-foreground">Help Offered</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg">
-              <AlertCircle className="w-5 h-5 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{stats.totalAlerts}</p>
-              <p className="text-xs text-muted-foreground">Active Alerts</p>
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Feed */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Filters and Search */}
-          <Card>
-            <CardContent className="p-4 space-y-4">
-              {/* Search */}
+        {/* ── Main Column ───────────────────────────────────────────────────── */}
+        <div className="lg:col-span-2 space-y-4">
+
+          {/* Search & Filters Card */}
+          <Card className="shadow-sm">
+            <CardContent className="p-4 space-y-3">
+              {/* Search row */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search posts, tags, locations..."
+                  placeholder="Search posts, people, tags or locations…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
                 />
               </div>
 
-              {/* Filters */}
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Select value={filterType} onValueChange={setFilterType}>
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Filter by type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Posts</SelectItem>
-                    <SelectItem value="general">General</SelectItem>
-                    <SelectItem value="help">Help Requests</SelectItem>
-                    <SelectItem value="offer">Offerings</SelectItem>
-                    <SelectItem value="alert">Alerts</SelectItem>
-                    <SelectItem value="emergency">Emergency</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Type filter pills */}
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: 'all', label: '🌐 All', active: 'bg-indigo-600 text-white' },
+                  { value: 'emergency', label: '🆘 Emergency', active: 'bg-red-600 text-white' },
+                  { value: 'help', label: '🙏 Help', active: 'bg-orange-500 text-white' },
+                  { value: 'offer', label: '💚 Offer', active: 'bg-green-600 text-white' },
+                  { value: 'alert', label: '⚠️ Alert', active: 'bg-yellow-500 text-white' },
+                  { value: 'general', label: '💬 General', active: 'bg-blue-500 text-white' },
+                ].map(({ value, label, active }) => (
+                  <button
+                    key={value}
+                    onClick={() => setFilterType(value)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
+                      filterType === value
+                        ? active + ' border-transparent shadow-sm'
+                        : 'bg-muted/50 text-muted-foreground border-border hover:bg-muted'
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
 
+              {/* Bottom row: sort + pincode */}
+              <div className="flex flex-col sm:flex-row gap-2">
                 <Select value={sortBy} onValueChange={setSortBy}>
-                  <SelectTrigger className="flex-1">
+                  <SelectTrigger className="sm:w-44 h-9 text-sm">
                     <SelectValue placeholder="Sort by" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="recent">Most Recent</SelectItem>
-                    <SelectItem value="popular">Most Popular</SelectItem>
-                    <SelectItem value="commented">Most Commented</SelectItem>
+                    <SelectItem value="recent">🕐 Most Recent</SelectItem>
+                    <SelectItem value="popular">🔥 Most Popular</SelectItem>
+                    <SelectItem value="commented">💬 Most Discussed</SelectItem>
                   </SelectContent>
                 </Select>
+
+                <div className="flex gap-2 flex-1">
+                  <div className="relative flex-1">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Pincode filter (e.g. 751001)"
+                      value={pincodeInput}
+                      onChange={e => setPincodeInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && applyPin()}
+                      className="pl-8 h-9 text-sm"
+                      maxLength={10}
+                    />
+                  </div>
+                  <Button size="sm" className="h-9" onClick={applyPin} disabled={!pincodeInput.trim()}>
+                    Apply
+                  </Button>
+                  {activePin && (
+                    <Button size="sm" variant="outline" className="h-9 gap-1 text-muted-foreground" onClick={clearPin}>
+                      ✕ {activePin}
+                    </Button>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Tabs */}
+          {/* Feed Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="feed">Feed</TabsTrigger>
-              <TabsTrigger value="saved">Saved ({savedPosts.length})</TabsTrigger>
-              <TabsTrigger value="my-posts">My Posts ({myPosts.length})</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-4 h-10">
+              <TabsTrigger value="feed" className="text-sm">
+                <Activity className="w-3.5 h-3.5 mr-1.5" />Feed
+              </TabsTrigger>
+              <TabsTrigger value="map" className="text-sm">
+                <Map className="w-3.5 h-3.5 mr-1.5" />Map
+              </TabsTrigger>
+              <TabsTrigger value="saved" className="text-sm">
+                Saved {savedPosts.length > 0 && <span className="ml-1 bg-primary/15 text-primary text-[10px] px-1.5 py-0.5 rounded-full">{savedPosts.length}</span>}
+              </TabsTrigger>
+              <TabsTrigger value="my-posts" className="text-sm">
+                Mine {myPosts.length > 0 && <span className="ml-1 bg-primary/15 text-primary text-[10px] px-1.5 py-0.5 rounded-full">{myPosts.length}</span>}
+              </TabsTrigger>
             </TabsList>
 
             {/* Feed Tab */}
-            <TabsContent value="feed" className="space-y-4 mt-6">
+            <TabsContent value="feed" className="space-y-3 mt-4">
               {loading ? (
                 <Card>
                   <CardContent className="p-12 text-center">
-                    <Loader2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground animate-spin" />
-                    <p className="text-muted-foreground">Loading community posts...</p>
+                    <Loader2 className="w-10 h-10 mx-auto mb-4 text-primary animate-spin" />
+                    <p className="text-muted-foreground font-medium">Loading community posts…</p>
                   </CardContent>
                 </Card>
               ) : filteredPosts.length > 0 ? (
@@ -310,6 +462,10 @@ const Community = () => {
                   <CommunityPost
                     key={post.id}
                     post={post}
+                    currentUserId={user?.id}
+                    currentUserName={user?.name || user?.email}
+                    currentUserPhoto={user?.photoURL}
+                    authorBadge={badgeByUser[post.user_id]}
                     onLike={handlePostLike}
                     onDelete={handlePostDelete}
                     onShare={handlePostShare}
@@ -319,22 +475,52 @@ const Community = () => {
               ) : (
                 <Card>
                   <CardContent className="p-12 text-center">
-                    <Search className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-muted-foreground">
-                      {searchQuery ? 'No posts found matching your search' : 'No posts to display'}
+                    <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Search className="w-7 h-7 text-muted-foreground" />
+                    </div>
+                    <p className="font-semibold mb-1">No posts found</p>
+                    <p className="text-sm text-muted-foreground">
+                      {searchQuery ? 'Try a different search term' : 'Be the first to post in your area!'}
                     </p>
+                    {!searchQuery && (
+                      <Button className="mt-4 gap-2" onClick={() => setIsCreateModalOpen(true)}>
+                        <Plus className="w-4 h-4" /> Create Post
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               )}
             </TabsContent>
 
+            {/* Map Tab */}
+            <TabsContent value="map" className="mt-4">
+              <Card className="overflow-hidden shadow-sm">
+                <CardHeader className="pb-2 border-b">
+                  <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                    <Map className="w-4 h-4 text-primary" />
+                    Community Map
+                    <Badge variant="secondary" className="ml-auto font-normal">
+                      {posts.filter(p => p.lat && p.lon).length} pinned
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <CommunityMap posts={posts} userLocation={userLocation} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
             {/* Saved Tab */}
-            <TabsContent value="saved" className="space-y-4 mt-6">
+            <TabsContent value="saved" className="space-y-3 mt-4">
               {savedPosts.length > 0 ? (
                 savedPosts.map((post) => (
                   <CommunityPost
                     key={post.id}
                     post={post}
+                    currentUserId={user?.id}
+                    currentUserName={user?.name || user?.email}
+                    currentUserPhoto={user?.photoURL}
+                    authorBadge={badgeByUser[post.user_id]}
                     onLike={handlePostLike}
                     onDelete={handlePostDelete}
                     onShare={handlePostShare}
@@ -344,20 +530,27 @@ const Community = () => {
               ) : (
                 <Card>
                   <CardContent className="p-12 text-center">
-                    <Heart className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-muted-foreground">No saved posts yet</p>
+                    <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Heart className="w-7 h-7 text-muted-foreground" />
+                    </div>
+                    <p className="font-semibold mb-1">No saved posts</p>
+                    <p className="text-sm text-muted-foreground">Bookmark posts to find them here later.</p>
                   </CardContent>
                 </Card>
               )}
             </TabsContent>
 
             {/* My Posts Tab */}
-            <TabsContent value="my-posts" className="space-y-4 mt-6">
+            <TabsContent value="my-posts" className="space-y-3 mt-4">
               {myPosts.length > 0 ? (
                 myPosts.map((post) => (
                   <CommunityPost
                     key={post.id}
                     post={post}
+                    currentUserId={user?.id}
+                    currentUserName={user?.name || user?.email}
+                    currentUserPhoto={user?.photoURL}
+                    authorBadge={badgeByUser[post.user_id]}
                     onLike={handlePostLike}
                     onDelete={handlePostDelete}
                     onShare={handlePostShare}
@@ -367,10 +560,13 @@ const Community = () => {
               ) : (
                 <Card>
                   <CardContent className="p-12 text-center">
-                    <Plus className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-muted-foreground mb-4">You haven't created any posts yet</p>
-                    <Button onClick={() => setIsCreateModalOpen(true)}>
-                      Create Your First Post
+                    <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Plus className="w-7 h-7 text-muted-foreground" />
+                    </div>
+                    <p className="font-semibold mb-1">No posts yet</p>
+                    <p className="text-sm text-muted-foreground mb-4">Share something with your community.</p>
+                    <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2">
+                      <Plus className="w-4 h-4" /> Create Your First Post
                     </Button>
                   </CardContent>
                 </Card>
@@ -379,197 +575,200 @@ const Community = () => {
           </Tabs>
         </div>
 
-        {/* Sidebar */}
-        <div className="space-y-6">
+        {/* ── Sidebar ───────────────────────────────────────────────────────── */}
+        <div className="space-y-4">
+
           {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button 
-                className="w-full justify-start gap-2 bg-red-500 hover:bg-red-600"
-                onClick={() => {
-                  setIsCreateModalOpen(true);
-                  // Could auto-select emergency type
-                }}
-              >
-                <AlertCircle className="w-4 h-4" />
-                Report Emergency
-              </Button>
-              <Button 
-                variant="outline" 
-                className="w-full justify-start gap-2"
-                onClick={() => setIsCreateModalOpen(true)}
-              >
-                <HelpCircle className="w-4 h-4" />
-                Request Help
-              </Button>
-              <Button 
-                variant="outline" 
-                className="w-full justify-start gap-2"
-                onClick={() => setIsCreateModalOpen(true)}
-              >
-                <Heart className="w-4 h-4" />
-                Offer Help
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Leaderboard */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Award className="w-5 h-5 text-yellow-500" />
-                Local Heroes
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Zap className="w-4 h-4 text-yellow-500" /> Quick Actions
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {[
-                { name: 'Rahul Sharma', posts: 87, rank: 1 },
-                { name: 'Priya Das', posts: 65, rank: 2 },
-                { name: 'Volunteer Group A', posts: 52, rank: 3 }
-              ].map((hero, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className={cn(
-                    "font-bold w-6 h-6 flex items-center justify-center rounded-full text-xs",
-                    i === 0 && "bg-yellow-100 text-yellow-700",
-                    i === 1 && "bg-gray-100 text-gray-700",
-                    i === 2 && "bg-orange-100 text-orange-700"
-                  )}>
-                    {hero.rank}
-                  </div>
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${hero.name}`} />
-                    <AvatarFallback>{hero.name[0]}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{hero.name}</p>
-                    <p className="text-xs text-muted-foreground">{hero.posts} helpful posts</p>
-                  </div>
-                  {i === 0 && (
-                    <Badge variant="outline" className="text-yellow-600 bg-yellow-50 border-yellow-200 text-[10px]">
-                      Top Hero
-                    </Badge>
-                  )}
+            <CardContent className="space-y-2 pt-0">
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-red-50 dark:bg-red-900/15 border border-red-100 dark:border-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/25 transition-colors text-left"
+              >
+                <div className="bg-red-100 dark:bg-red-900/30 p-1.5 rounded-lg">
+                  <AlertCircle className="w-4 h-4" />
                 </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* Trending Topics */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <TrendingUp className="w-5 h-5" />
-                Trending Topics
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {[
-                { tag: 'flood', count: 45 },
-                { tag: 'shelter', count: 32 },
-                { tag: 'emergency', count: 28 },
-                { tag: 'food', count: 21 },
-                { tag: 'electricity', count: 18 }
-              ].map((topic, i) => (
-                <button
-                  key={i}
-                  onClick={() => setSearchQuery(topic.tag)}
-                  className="flex items-center justify-between w-full p-2 rounded-lg hover:bg-accent transition-colors text-left"
-                >
-                  <span className="text-sm font-medium">#{topic.tag}</span>
-                  <Badge variant="secondary" className="text-xs">
-                    {topic.count}
-                  </Badge>
-                </button>
-              ))}
+                <div>
+                  <p className="text-sm font-semibold">Report Emergency</p>
+                  <p className="text-xs opacity-70">Immediate danger or crisis</p>
+                </div>
+                <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
+              </button>
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-orange-50 dark:bg-orange-900/15 border border-orange-100 dark:border-orange-900/30 text-orange-700 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/25 transition-colors text-left"
+              >
+                <div className="bg-orange-100 dark:bg-orange-900/30 p-1.5 rounded-lg">
+                  <HelpCircle className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">Request Help</p>
+                  <p className="text-xs opacity-70">Need resources or support</p>
+                </div>
+                <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
+              </button>
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-green-50 dark:bg-green-900/15 border border-green-100 dark:border-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/25 transition-colors text-left"
+              >
+                <div className="bg-green-100 dark:bg-green-900/30 p-1.5 rounded-lg">
+                  <Heart className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">Offer Help</p>
+                  <p className="text-xs opacity-70">Share skills or resources</p>
+                </div>
+                <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
+              </button>
             </CardContent>
           </Card>
 
           {/* Urgent Needs & Offers */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Urgent Needs & Offers</CardTitle>
+          {urgentPosts.length > 0 && (
+            <Card className="shadow-sm border-orange-200 dark:border-orange-900/40">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                  </span>
+                  Urgent Near You
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 pt-0">
+                {urgentPosts.map((p, i) => {
+                  const isOffer = p.type === 'offer';
+                  return (
+                    <button
+                      key={p.id || i}
+                      onClick={() => { setActiveTab('feed'); setFilterType(p.type); }}
+                      className={cn(
+                        'w-full text-left p-3 rounded-xl border transition-colors',
+                        isOffer
+                          ? 'bg-green-50 dark:bg-green-900/10 border-green-100 dark:border-green-900/30 hover:bg-green-100/60'
+                          : 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/30 hover:bg-red-100/60'
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Badge className={cn('text-[10px] h-4 px-1.5', isOffer ? 'bg-green-600' : 'bg-red-600')}>
+                          {isOffer ? 'OFFER' : 'NEED'}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground ml-auto">
+                          {p.timestamp ? new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </span>
+                      </div>
+                      <p className="text-xs font-medium line-clamp-2 mb-1">{p.content}</p>
+                      {p.location && (
+                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <MapPin className="w-2.5 h-2.5" />
+                          <span className="truncate">{p.location}</span>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Leaderboard */}
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                <Award className="w-4 h-4 text-yellow-500" /> Local Heroes
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {/* Help Needed */}
-              <div className="p-3 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-lg">
-                <div className="flex justify-between items-start mb-2">
-                  <Badge className="text-xs bg-red-600">NEED</Badge>
-                  <span className="text-[10px] text-muted-foreground">5m ago</span>
-                </div>
-                <p className="text-sm font-medium mb-1">Urgent: Insulin for diabetic patient</p>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-                  <MapPin className="w-3 h-3" />
-                  <span>Saheed Nagar</span>
-                </div>
-                <Button size="sm" variant="link" className="h-auto p-0 text-red-600 text-xs">
-                  Respond to Help Request →
-                </Button>
-              </div>
+            <CardContent className="space-y-3 pt-0">
+              {leaderboard.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-3">
+                  Be the first community hero!
+                </p>
+              ) : (
+                leaderboard.map((hero, i) => {
+                  const bCfg = BADGE_CONFIG[hero.badge?.name] || BADGE_CONFIG.Newcomer;
+                  return (
+                    <div key={hero.user_id} className={cn(
+                      'flex items-center gap-3 p-2.5 rounded-xl transition-colors',
+                      i === 0 && 'bg-yellow-50 dark:bg-yellow-900/10',
+                      i === 1 && 'bg-gray-50 dark:bg-gray-900/10',
+                      i === 2 && 'bg-orange-50 dark:bg-orange-900/10',
+                    )}>
+                      <div className={cn(
+                        'font-bold w-7 h-7 flex items-center justify-center rounded-full text-xs shrink-0 shadow-sm',
+                        i === 0 && 'bg-yellow-400 text-yellow-900',
+                        i === 1 && 'bg-gray-300 text-gray-700',
+                        i === 2 && 'bg-orange-400 text-orange-900',
+                        i > 2 && 'bg-muted text-muted-foreground',
+                      )}>
+                        {hero.rank}
+                      </div>
+                      <Avatar className="h-8 w-8 shrink-0">
+                        <AvatarImage src={hero.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${hero.name}`} />
+                        <AvatarFallback>{hero.name?.[0] || '?'}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold truncate">{hero.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{hero.helpful_posts} helpful posts</p>
+                      </div>
+                      <span className={cn(
+                        'text-[10px] font-semibold px-1.5 py-0.5 rounded-full border shrink-0',
+                        bCfg.bg
+                      )}>
+                        {bCfg.emoji}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
 
-              {/* Medical Supplies */}
-              <div className="p-3 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-lg">
-                <div className="flex justify-between items-start mb-2">
-                  <Badge className="text-xs bg-red-600">NEED</Badge>
-                  <span className="text-[10px] text-muted-foreground">12m ago</span>
+          {/* Trending Topics */}
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                <TrendingUp className="w-4 h-4 text-blue-500" /> Trending Topics
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {trendingTags.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-3">No trending tags yet</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {trendingTags.map((topic, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setSearchQuery(topic.tag)}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-muted hover:bg-muted/70 rounded-full text-xs font-medium transition-colors"
+                    >
+                      <Hash className="w-3 h-3 text-muted-foreground" />
+                      {topic.tag}
+                      <span className="ml-0.5 text-muted-foreground">·{topic.count}</span>
+                    </button>
+                  ))}
                 </div>
-                <p className="text-sm font-medium mb-1">Medical supplies needed</p>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-                  <MapPin className="w-3 h-3" />
-                  <span>Unit 4, Cuttack</span>
-                </div>
-                <Button size="sm" variant="link" className="h-auto p-0 text-red-600 text-xs">
-                  Respond to Help Request →
-                </Button>
-              </div>
-
-              {/* Shelter Offered */}
-              <div className="p-3 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/20 rounded-lg">
-                <div className="flex justify-between items-start mb-2">
-                  <Badge className="text-xs bg-green-600">OFFER</Badge>
-                  <span className="text-[10px] text-muted-foreground">20m ago</span>
-                </div>
-                <p className="text-sm font-medium mb-1">Shelter available for 2 families</p>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-                  <MapPin className="w-3 h-3" />
-                  <span>Khandagiri</span>
-                </div>
-                <Button size="sm" variant="link" className="h-auto p-0 text-green-600 text-xs">
-                  Contact Helper →
-                </Button>
-              </div>
-
-              {/* Food Distribution */}
-              <div className="p-3 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/20 rounded-lg">
-                <div className="flex justify-between items-start mb-2">
-                  <Badge className="text-xs bg-green-600">OFFER</Badge>
-                  <span className="text-[10px] text-muted-foreground">35m ago</span>
-                </div>
-                <p className="text-sm font-medium mb-1">Free food distribution at community center</p>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-                  <MapPin className="w-3 h-3" />
-                  <span>Bhubaneswar</span>
-                </div>
-                <Button size="sm" variant="link" className="h-auto p-0 text-green-600 text-xs">
-                  Get Details →
-                </Button>
-              </div>
+              )}
             </CardContent>
           </Card>
 
           {/* Community Guidelines */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Community Guidelines</CardTitle>
+          <Card className="shadow-sm bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-900/30">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-semibold text-blue-700 dark:text-blue-400 flex items-center gap-2">
+                <Shield className="w-3.5 h-3.5" /> Community Guidelines
+              </CardTitle>
             </CardHeader>
-            <CardContent className="text-xs text-muted-foreground space-y-2">
-              <p>• Be respectful and helpful</p>
-              <p>• Verify information before posting</p>
-              <p>• Use appropriate post types</p>
-              <p>• Add location for local help</p>
-              <p>• Report false information</p>
+            <CardContent className="text-[11px] text-muted-foreground space-y-1.5 pt-0">
+              {['Be respectful and helpful', 'Verify before posting', 'Use correct post types', 'Add location for local help', 'Report false information'].map(g => (
+                <div key={g} className="flex items-center gap-1.5">
+                  <div className="w-1 h-1 rounded-full bg-blue-400 shrink-0" /> {g}
+                </div>
+              ))}
             </CardContent>
           </Card>
         </div>
@@ -580,6 +779,15 @@ const Community = () => {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onPostCreated={handlePostCreated}
+      />
+
+      {/* DM Inbox Panel */}
+      <DirectMessagePanel
+        isOpen={showDMPanel}
+        onClose={() => setShowDMPanel(false)}
+        myUserId={user?.id}
+        myName={user?.displayName || user?.email}
+        myPhoto={user?.photoURL}
       />
     </div>
   );

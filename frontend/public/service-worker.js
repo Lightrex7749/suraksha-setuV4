@@ -132,6 +132,8 @@ self.addEventListener('notificationclick', (event) => {
     const alertData = event.notification.data;
     if (alertData.url) {
       urlToOpen = alertData.url;
+    } else if (alertData.type === 'community_post') {
+      urlToOpen = '/app/community';
     } else if (alertData.id) {
       urlToOpen = `/alerts/${alertData.id}`;
     }

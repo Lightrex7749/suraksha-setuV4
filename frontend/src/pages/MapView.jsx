@@ -48,11 +48,18 @@ const MapView = () => {
     aqiHeatMap: false,
     rainfall: true,
     cyclone: true,
+    disasterHeatmap: false,
   });
+
+  const [allDisasters, setAllDisasters] = useState([]);
 
   useEffect(() => {
     loadLocationData(center[0], center[1]);
     fetchAlerts();
+    fetch(`${API_URL}/api/disasters`)
+      .then(r => r.json())
+      .then(data => setAllDisasters((data.disasters || []).filter(d => d.lat && d.lon)))
+      .catch(() => {});
   }, []);
 
   const fetchAlerts = async () => {
@@ -235,6 +242,7 @@ const MapView = () => {
             showLayers={showLayers}
             searchRadius={searchRadius}
             alerts={alerts}
+            disasters={allDisasters}
           />
         </div>
 
@@ -287,6 +295,16 @@ const MapView = () => {
                 <Switch 
                   checked={showLayers.cyclone}
                   onCheckedChange={(checked) => setShowLayers(prev => ({ ...prev, cyclone: checked }))}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600" />
+                  <Label className="text-sm">Disaster Heatmap</Label>
+                </div>
+                <Switch 
+                  checked={showLayers.disasterHeatmap}
+                  onCheckedChange={(checked) => setShowLayers(prev => ({ ...prev, disasterHeatmap: checked }))}
                 />
               </div>
             </CardContent>

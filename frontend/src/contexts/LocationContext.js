@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import useWebSocket from '@/hooks/useWebSocket';
 
@@ -18,8 +18,17 @@ export const LocationProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [alerts, setAlerts] = useState([]);
 
+  // Stable unique client ID for this browser session
+  const clientIdRef = useRef(
+    sessionStorage.getItem('ws_client_id') || (() => {
+      const id = `client_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      sessionStorage.setItem('ws_client_id', id);
+      return id;
+    })()
+  );
+
   // Initialize WebSocket for real-time alerts
-  const wsUrl = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000').replace('http://', 'ws://').replace('https://', 'wss://') + '/api/ws/alerts';
+  const wsUrl = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000').replace('http://', 'ws://').replace('https://', 'wss://') + `/api/ws/${clientIdRef.current}`;
   
   const {
     isConnected: wsConnected,

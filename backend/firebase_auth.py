@@ -70,13 +70,18 @@ async def verify_firebase_token(
         HTTPException: If token is invalid or expired
     """
     if not firebase_initialized:
-        # If Firebase is not configured, allow requests (for local development)
-        logging.warning("Firebase not initialized - skipping token verification")
-        return {
-            "uid": "local_dev_user",
-            "email": "dev@suraksha.local",
-            "name": "Development User"
-        }
+        # Only allow bypass in explicit development mode
+        if os.getenv("ENVIRONMENT", "production").lower() in ("development", "dev", "local"):
+            logging.warning("Firebase not initialized - bypassing token verification (dev mode only)")
+            return {
+                "uid": "local_dev_user",
+                "email": "dev@suraksha.local",
+                "name": "Development User"
+            }
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service unavailable. Set FIREBASE_SERVICE_ACCOUNT_PATH or FIREBASE_PROJECT_ID."
+        )
     
     token = credentials.credentials
     

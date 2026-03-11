@@ -4,6 +4,15 @@ import './ResearcherChat.css';
 
 const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
 
+function detectLanguage(text = '') {
+    if (!text) return 'en-IN';
+    if (/[\u0900-\u097F]/.test(text)) return 'hi-IN';
+    if (/[\u0B80-\u0BFF]/.test(text)) return 'ta-IN';
+    if (/[\u0C00-\u0C7F]/.test(text)) return 'te-IN';
+    if (/[\u0980-\u09FF]/.test(text)) return 'bn-IN';
+    return 'en-IN';
+}
+
 function confidenceLabel(score) {
     if (score >= 0.8) return { level: 'high', text: `${(score * 100).toFixed(0)}%` };
     if (score >= 0.5) return { level: 'medium', text: `${(score * 100).toFixed(0)}%` };
@@ -37,6 +46,7 @@ export default function ResearcherChat() {
         setLoading(true);
 
         try {
+            const detectedLang = detectLanguage(userMsg.text);
             const res = await fetch(`${API_URL}/ai`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -45,6 +55,9 @@ export default function ResearcherChat() {
                     role: 'scientist',
                     rag_mode: ragEnabled,
                     report_mode: reportMode,
+                    language: detectedLang,
+                    locale: detectedLang,
+                    context: { language: detectedLang, locale: detectedLang },
                 }),
             });
             const data = await res.json();

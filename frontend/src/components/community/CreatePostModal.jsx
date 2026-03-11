@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   X, MapPin, Tag, AlertCircle, HelpCircle, 
-  Megaphone, MessageSquare, Send, Camera, Trash2
+  Megaphone, MessageSquare, Send, Camera, Trash2, Loader2
 } from 'lucide-react';
 import {
   Dialog,
@@ -24,18 +24,80 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import CameraCapture from './CameraCapture';
+import { useAuth } from '@/contexts/AuthContext';
+import axios from 'axios';
+
+const reverseGeocode = async (lat, lon) => {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`,
+      { headers: { 'Accept-Language': 'en' } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const a = data.address || {};
+    const parts = [
+      a.road || a.neighbourhood || '',
+      a.city || a.town || a.village || a.county || '',
+      a.state || '',
+    ].filter(Boolean);
+    return parts.join(', ') || data.display_name || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  } catch {
+    return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  }
+};
+
+const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000');
+
+const SEVERITY_COLOR = { low: 'bg-yellow-500', medium: 'bg-orange-500', high: 'bg-red-500', critical: 'bg-red-700' };
+const DISASTER_EMOJI = { fire: '🔥', flood: '🌊', earthquake: '🌍', cyclone: '🌀', landslide: '🏔️', none: '📷' };
+
+// Determine if all uploaded images are irrelevant for non-general posts
+const allImagesIrrelevant = (files, type) => {
+  if (type === 'general') return false;
+  const analyzed = files.filter((f) => f.analysis?.analysis);
+  if (analyzed.length === 0) return false; // no analysis yet
+  return analyzed.every((f) => f.analysis.analysis.disaster_type === 'none');
+};
+
+// Auto-suggest disaster post type from AI analysis
+const suggestPostType = (analysis) => {
+  const dt = analysis?.disaster_type;
+  if (!dt || dt === 'none') return null;
+  const severity = analysis?.severity;
+  if (severity === 'critical') return 'emergency';
+  if (dt === 'fire' || dt === 'earthquake' || dt === 'cyclone') return 'alert';
+  return 'alert';
+};
+
+// Build tags from AI analysis
+const buildTagsFromAnalysis = (analysis) => {
+  const t = [];
+  if (analysis?.disaster_type && analysis.disaster_type !== 'none') t.push(analysis.disaster_type);
+  (analysis?.objects_detected || []).slice(0, 3).forEach((o) => {
+    const clean = o.toLowerCase().replace(/\s+/g, '_');
+    if (clean && !t.includes(clean)) t.push(clean);
+  });
+  return t;
+};
 
 const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
+  const { user, userLocation } = useAuth();
   const [postType, setPostType] = useState('general');
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [location, setLocation] = useState('');
-  const [autoLocation, setAutoLocation] = useState(null);
+  // Pre-fill from cached user location (city-level, not precise)
+  const [location, setLocation] = useState(() => userLocation?.display || '');
+  const [autoLocation, setAutoLocation] = useState(() =>
+    userLocation ? { latitude: userLocation.lat, longitude: userLocation.lon } : null
+  );
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [pendingUploads, setPendingUploads] = useState(0);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [imageBlockReason, setImageBlockReason] = useState(null);
 
   const postTypes = [
     { value: 'general', label: 'General Post', icon: MessageSquare, color: 'bg-blue-500' },
@@ -47,7 +109,7 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
 
   const getCurrentLocation = () => {
     setIsGettingLocation(true);
-    
+
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser');
       setIsGettingLocation(false);
@@ -57,12 +119,10 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
-        
-        // Reverse geocoding (you can use a real API here)
-        // For now, just show coordinates
-        const locationStr = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
         setAutoLocation({ latitude, longitude });
-        setLocation(locationStr);
+        // Reverse geocode for human-readable address
+        const addr = await reverseGeocode(latitude, longitude);
+        setLocation(addr);
         setIsGettingLocation(false);
       },
       (error) => {
@@ -70,7 +130,7 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
         alert('Unable to get your location. Please enter it manually.');
         setIsGettingLocation(false);
       },
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: true, timeout: 8000 }
     );
   };
 
@@ -85,20 +145,76 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
     setTags(tags.filter(t => t !== tagToRemove));
   };
 
-  const handleCameraCapture = (fileData) => {
-    // Add captured photo to uploaded files
-    setUploadedFiles((prev) => [...prev, fileData]);
-    
-    // If photo has GPS location, auto-fill location field
+  const handleCameraCapture = async (fileData) => {
+    // Add to preview immediately with uploading state
+    const withUploading = { ...fileData, uploading: true, backendUrl: null, analysis: null };
+    setUploadedFiles((prev) => [...prev, withUploading]);
+    setPendingUploads((n) => n + 1);
+
+    // If photo has GPS location, auto-fill location field with human-readable address
     if (fileData.geotag && fileData.geotag.latitude && fileData.geotag.longitude) {
       setAutoLocation(fileData.geotag);
-      
-      // If address is available, use it
       if (fileData.address && fileData.address.full) {
         setLocation(fileData.address.full);
       } else {
-        setLocation(`${fileData.geotag.latitude.toFixed(6)}, ${fileData.geotag.longitude.toFixed(6)}`);
+        // Resolve via nominatim
+        reverseGeocode(fileData.geotag.latitude, fileData.geotag.longitude).then(setLocation);
       }
+    }
+
+    // Upload to backend
+    try {
+      const formData = new FormData();
+      formData.append('file', fileData.file);
+      formData.append('description', content || '');
+      const res = await axios.post(`${API_URL}/api/community/upload-image`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const { url, analysis } = res.data;
+
+      setUploadedFiles((prev) => {
+        const updated = prev.map((f) =>
+          f.id === fileData.id ? { ...f, uploading: false, backendUrl: url, analysis } : f
+        );
+
+        // After upload: if AI detected a disaster, auto-fill content & tags (if blank)
+        const imageAnalysis = analysis?.analysis;
+        if (imageAnalysis && imageAnalysis.disaster_type !== 'none') {
+          setImageBlockReason(null);
+          // Auto-fill content if user hasn't typed yet
+          if (!content.trim() && imageAnalysis.description) {
+            setContent(imageAnalysis.description);
+          }
+          // Auto-add tags (avoid duplicates)
+          const suggested = buildTagsFromAnalysis(imageAnalysis);
+          setTags((prev) => {
+            const merged = [...prev];
+            suggested.forEach((t) => { if (!merged.includes(t)) merged.push(t); });
+            return merged;
+          });
+          // Suggest post type
+          const sugType = suggestPostType(imageAnalysis);
+          if (sugType) setPostType(sugType);
+        } else if (imageAnalysis && imageAnalysis.disaster_type === 'none') {
+          // Check if block needed after this update
+          const allIrrelevant = updated
+            .filter((f) => f.analysis?.analysis)
+            .every((f) => f.analysis.analysis.disaster_type === 'none');
+          if (allIrrelevant) {
+            setImageBlockReason('The image does not appear to show any disaster or emergency situation. Please capture a relevant photo or remove the image.');
+          }
+        }
+
+        return updated;
+      });
+    } catch (err) {
+      console.error('Image upload failed:', err);
+      // Keep the file but mark upload failed; we'll skip it on submit
+      setUploadedFiles((prev) =>
+        prev.map((f) => f.id === fileData.id ? { ...f, uploading: false, uploadError: true } : f)
+      );
+    } finally {
+      setPendingUploads((n) => n - 1);
     }
   };
 
@@ -111,20 +227,47 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
       alert('Please enter post content');
       return;
     }
+    if (pendingUploads > 0) {
+      alert('Please wait for images to finish uploading');
+      return;
+    }
+    // Block if images are present but completely irrelevant (for non-general posts)
+    const hasImages = uploadedFiles.filter((f) => f.backendUrl).length > 0;
+    if (hasImages && postType !== 'general' && allImagesIrrelevant(uploadedFiles, postType)) {
+      alert('⚠️ Your image does not appear to show a disaster or emergency situation.\n\nPlease capture a relevant photo showing the actual situation, or change the post type to "General Post".');
+      return;
+    }
+
+    // Build media array from successfully uploaded files
+    const media = uploadedFiles
+      .filter((f) => f.backendUrl)
+      .map((f) => ({
+        url: f.backendUrl,
+        type: f.type || 'image/jpeg',
+        name: f.name,
+        geotag: f.geotag || null,
+        analysis: f.analysis || null,
+      }));
+
+    // Collect image analysis for the best match
+    const imageAnalysis = uploadedFiles
+      .map((f) => f.analysis?.analysis)
+      .filter(Boolean)
+      .sort((a, b) => (b.confidence || 0) - (a.confidence || 0))[0] || null;
 
     const post = {
-      id: Math.random().toString(36).substr(2, 9),
       type: postType,
       title: title.trim(),
       content: content.trim(),
       location: location.trim() || 'Unknown',
-      geolocation: autoLocation,
+      lat: autoLocation?.latitude || null,
+      lon: autoLocation?.longitude || null,
       tags,
-      media: uploadedFiles,
-      author: 'Current User', // Will be replaced with actual user
-      timestamp: new Date().toISOString(),
-      likes: 0,
-      comments: []
+      media,
+      image_analysis: imageAnalysis,
+      author: user?.name || user?.email || 'Community Member',
+      author_photo: user?.photoURL || null,
+      user_id: user?.id || 'anonymous',
     };
 
     onPostCreated?.(post);
@@ -136,11 +279,14 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
     setPostType('general');
     setTitle('');
     setContent('');
-    setLocation('');
-    setAutoLocation(null);
+    // Restore city-level cached location after reset
+    setLocation(userLocation?.display || '');
+    setAutoLocation(userLocation ? { latitude: userLocation.lat, longitude: userLocation.lon } : null);
     setTags([]);
     setTagInput('');
     setUploadedFiles([]);
+    setPendingUploads(0);
+    setImageBlockReason(null);
   };
 
   const selectedPostType = postTypes.find(pt => pt.value === postType);
@@ -295,6 +441,18 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
                           alt={file.name}
                           className="w-full h-32 object-cover rounded-lg border"
                         />
+                        {/* Upload spinner */}
+                        {file.uploading && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-lg">
+                            <Loader2 className="w-6 h-6 text-white animate-spin" />
+                          </div>
+                        )}
+                        {/* Upload error */}
+                        {file.uploadError && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-red-900/60 rounded-lg">
+                            <p className="text-white text-xs text-center px-2">Upload failed</p>
+                          </div>
+                        )}
                         <Button
                           size="icon"
                           variant="destructive"
@@ -313,11 +471,20 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
                             GPS: {file.geotag.accuracy ? `±${Math.round(file.geotag.accuracy)}m` : 'Yes'}
                           </Badge>
                         )}
+                        {/* AI Analysis Badge */}
+                        {file.analysis?.analysis && file.analysis.analysis.disaster_type !== 'none' && (
+                          <Badge
+                            className={`absolute top-2 left-2 text-[10px] px-1.5 py-0.5 text-white border-0 ${SEVERITY_COLOR[file.analysis.analysis.severity] || 'bg-gray-600'}`}
+                          >
+                            {DISASTER_EMOJI[file.analysis.analysis.disaster_type] || '⚠️'} {file.analysis.analysis.disaster_type} · {file.analysis.analysis.severity}
+                          </Badge>
+                        )}
                       </div>
                     ))}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {uploadedFiles.length} photo{uploadedFiles.length > 1 ? 's' : ''} attached with GPS data
+                    {pendingUploads > 0 && <span className="text-orange-500 ml-1">(uploading...)</span>}
                   </p>
                 </div>
               )}
@@ -371,13 +538,25 @@ const CreatePostModal = ({ isOpen, onClose, onPostCreated }) => {
               </Badge>
             )}
           </div>
+
+          {/* AI Block Warning */}
+          {imageBlockReason && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-300 dark:border-red-700">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-semibold text-red-700 dark:text-red-400">Image Not Relevant</p>
+                <p className="text-xs text-red-600 dark:text-red-500 mt-0.5">{imageBlockReason}</p>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => { resetForm(); onClose(); }}>
               Cancel
             </Button>
-            <Button onClick={handleSubmit} className="gap-2">
-              <Send className="w-4 h-4" />
-              Post
+            <Button onClick={handleSubmit} className="gap-2" disabled={pendingUploads > 0 || !!imageBlockReason}>
+              {pendingUploads > 0 ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              {pendingUploads > 0 ? 'Uploading...' : 'Post'}
             </Button>
           </div>
         </div>

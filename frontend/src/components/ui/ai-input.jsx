@@ -9,6 +9,10 @@ const AIInput = ({
     onChange,
     onSubmit,
     onMicClick,
+    onMicDown,
+    onMicUp,
+    voiceInputMode = 'toggle',
+    onVoiceInputModeChange,
     isRecording,
     isLoading,
     placeholder = "Ask anything...",
@@ -70,6 +74,38 @@ const AIInput = ({
 
                 {/* Right Actions */}
                 <div className="flex items-center gap-1 pb-0.5">
+                    {/* Voice Mode Toggle */}
+                    <div className="hidden sm:flex items-center gap-1 mr-1">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onVoiceInputModeChange && onVoiceInputModeChange('toggle')}
+                            className={cn(
+                                "h-8 px-2 rounded-full text-[11px]",
+                                voiceInputMode === 'toggle'
+                                    ? "bg-primary/10 text-primary"
+                                    : "text-muted-foreground"
+                            )}
+                        >
+                            Toggle
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onVoiceInputModeChange && onVoiceInputModeChange('ptt')}
+                            className={cn(
+                                "h-8 px-2 rounded-full text-[11px]",
+                                voiceInputMode === 'ptt'
+                                    ? "bg-primary/10 text-primary"
+                                    : "text-muted-foreground"
+                            )}
+                        >
+                            Hold
+                        </Button>
+                    </div>
+
                     {/* Mic Button */}
                     <AnimatePresence mode="wait">
                         {!value.trim() && (
@@ -79,7 +115,13 @@ const AIInput = ({
                                 exit={{ scale: 0, opacity: 0 }}
                             >
                                 <Button
+                                    type="button"
                                     onClick={onMicClick}
+                                    onMouseDown={voiceInputMode === 'ptt' ? onMicDown : undefined}
+                                    onMouseUp={voiceInputMode === 'ptt' ? onMicUp : undefined}
+                                    onMouseLeave={voiceInputMode === 'ptt' ? onMicUp : undefined}
+                                    onTouchStart={voiceInputMode === 'ptt' ? onMicDown : undefined}
+                                    onTouchEnd={voiceInputMode === 'ptt' ? onMicUp : undefined}
                                     variant="ghost"
                                     size="icon"
                                     className={cn(
@@ -128,7 +170,7 @@ const AIInput = ({
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
                         </span>
-                        Listening...
+                        {voiceInputMode === 'ptt' ? 'Recording (release to send)...' : 'Listening...'}
                     </div>
                 </motion.div>
             )}

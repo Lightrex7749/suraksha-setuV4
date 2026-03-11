@@ -9,6 +9,7 @@ from notifications import ws_manager
 from sqlalchemy import select, func
 import logging
 from datetime import datetime, timezone, timedelta
+from firebase_auth import verify_firebase_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -158,7 +159,7 @@ async def list_users(db=Depends(get_db)):
 
 
 @router.put("/users/{user_id}")
-async def update_user(user_id: str, body: UserUpdateRequest, db=Depends(get_db)):
+async def update_user(user_id: str, body: UserUpdateRequest, db=Depends(get_db), _admin=Depends(verify_firebase_token)):
     """Update a user's profile."""
     user = await db.get(User, user_id)
     if not user:
@@ -176,7 +177,7 @@ async def update_user(user_id: str, body: UserUpdateRequest, db=Depends(get_db))
 
 
 @router.delete("/users/{user_id}")
-async def delete_user(user_id: str, db=Depends(get_db)):
+async def delete_user(user_id: str, db=Depends(get_db), _admin=Depends(verify_firebase_token)):
     """Delete a user."""
     user = await db.get(User, user_id)
     if not user:
@@ -249,7 +250,7 @@ def _relative_time(dt):
 # ==================== ADMIN ENDPOINTS ====================
 
 @router.post("/alerts/retract")
-async def retract_alert(request: RetractionRequest, db = Depends(get_db)):
+async def retract_alert(request: RetractionRequest, db=Depends(get_db), _admin=Depends(verify_firebase_token)):
     """
     Retract an alert using the full safety pipeline:
     1. Mark alert as retracted in DB
@@ -273,7 +274,7 @@ async def retract_alert(request: RetractionRequest, db = Depends(get_db)):
 
 
 @router.post("/alerts/approve")
-async def approve_pending_alert(request: AlertApprovalRequest, db = Depends(get_db)):
+async def approve_pending_alert(request: AlertApprovalRequest, db=Depends(get_db), _admin=Depends(verify_firebase_token)):
     """
     Approve or reject a pending alert (human-in-the-loop for medium confidence).
     """

@@ -66,6 +66,51 @@ function AQIHeatMap({ stations }) {
   return null;
 }
 
+// Disaster Density Heatmap Layer
+function DisasterHeatmap({ disasters }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!disasters || disasters.length === 0) return;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const size = map.getSize();
+    canvas.width = size.x;
+    canvas.height = size.y;
+    canvas.style.position = 'absolute';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+    canvas.style.pointerEvents = 'none';
+    canvas.style.zIndex = '399';
+
+    const severityWeight = { extreme: 1.0, high: 0.75, moderate: 0.5, low: 0.25 };
+
+    disasters.forEach(d => {
+      if (!d.lat || !d.lon) return;
+      const point = map.latLngToContainerPoint([d.lat, d.lon]);
+      const weight = severityWeight[d.severity] ?? 0.3;
+      const radius = 60;
+
+      const gradient = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, radius);
+      gradient.addColorStop(0, `rgba(239,68,68,${0.55 * weight})`);
+      gradient.addColorStop(0.4, `rgba(249,115,22,${0.35 * weight})`);
+      gradient.addColorStop(1, 'rgba(0,0,0,0)');
+
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    const pane = map.getPane('overlayPane');
+    pane.appendChild(canvas);
+    return () => { if (pane.contains(canvas)) pane.removeChild(canvas); };
+  }, [disasters, map]);
+
+  return null;
+}
+
 // Fix Leaflet default marker icon issue
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -142,7 +187,7 @@ function MapRecenter({ center, searchRadius }) {
   return null;
 }
 
-const Map2D = ({ center, aqiStations, cycloneTrack, rainfallData, showLayers, searchRadius, alerts }) => {
+const Map2D = ({ center, aqiStations, cycloneTrack, rainfallData, showLayers, searchRadius, alerts, disasters }) => {
   const [mapCenter, setMapCenter] = useState(center || [20.5937, 78.9629]); // Default: India
 
   useEffect(() => {
@@ -179,6 +224,11 @@ const Map2D = ({ center, aqiStations, cycloneTrack, rainfallData, showLayers, se
             </div>
           </Popup>
         </Marker>
+      )}
+
+      {/* Disaster Density Heatmap */}
+      {showLayers?.disasterHeatmap && disasters && disasters.length > 0 && (
+        <DisasterHeatmap disasters={disasters} />
       )}
 
       {/* AQI Heat Map Overlay */}

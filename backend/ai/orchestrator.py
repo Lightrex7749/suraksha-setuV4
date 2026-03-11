@@ -10,6 +10,7 @@ from typing import Dict, Any
 from datetime import datetime, timezone
 
 from ai.openai_client import ai_client
+from ai.sarvam_client import sarvam_client
 from ai.agents import AGENTS, CitizenAgent
 from ai.function_executor import execute_tool_calls
 
@@ -18,7 +19,23 @@ logger = logging.getLogger(__name__)
 # ── Simple in-memory cache for student common queries ──
 _query_cache: Dict[str, dict] = {}
 _CACHE_TTL_SECONDS = 300  
-_MAX_CHAT_HISTORY = 3     
+_MAX_CHAT_HISTORY = 2
+
+
+def _sanitize_content(text: str) -> str:
+    """Remove provider reasoning tags before sending content to UI."""
+    if not text:
+        return ""
+    cleaned = text
+    # Strip a dangling leading think tag if provider omits closing tag.
+    if cleaned.lstrip().startswith("<think>") and "</think>" not in cleaned:
+        first_newline = cleaned.find("\n")
+        cleaned = cleaned[first_newline + 1:] if first_newline != -1 else ""
+    while "<think>" in cleaned and "</think>" in cleaned:
+        start = cleaned.find("<think>")
+        end = cleaned.find("</think>", start)
+        cleaned = (cleaned[:start] + cleaned[end + len("</think>"):]).strip()
+    return cleaned.strip()
 
 
 def _cache_key(role: str, message: str) -> str:
@@ -56,6 +73,113 @@ def _limit_chat_history(messages: list, max_messages: int = _MAX_CHAT_HISTORY) -
     system = [m for m in messages if m.get("role") == "system"]
     others = [m for m in messages if m.get("role") != "system"]
     return system + others[-max_messages:]
+
+
+# Romanized Hindi keyword list – expanded for common short-form / WhatsApp style
+_HINGLISH_KEYWORDS = [
+    "kya", "kaise", "barish", "mausam", "kal", "kl", "aaj", "abhi",
+    "hoga", "hogi", "hain", "hai", "nahi", "nhi", "bhi", "toh", "to",
+    "yaar", "bhai", "bc", "haha", "karo", "karo", "sahi", "sach",
+    "achha", "accha", "theek", "thik", "pata", "chal", "bata",
+    "kitna", "kab", "kahan", "kyun", "kyunki", "lekin", "aur",
+    "mujhe", "mera", "meri", "hum", "tum", "aap", "woh", "yeh",
+    "namaste", "shukriya", "dhanyawad", "bas", "bohot", "bahut",
+    "sayd", "shayad", "zaroor", "bilkul", "agar", "ager",
+    "ho", "ho sakta", "ho skta", "skta", "skti",
+]
+
+
+def _detect_language_from_text(text: str) -> str:
+    """Return BCP-47-style language code.
+    Returns 'hi-rom' for Romanized Hindi (Hinglish, Latin script),
+    'hi' for Devanagari Hindi, other codes for remaining languages."""
+    if not text:
+        return ""
+    # Devanagari script → formal Hindi
+    if any('\u0900' <= ch <= '\u097F' for ch in text):
+        return "hi"
+    if any('\u0B80' <= ch <= '\u0BFF' for ch in text):
+        return "ta"
+    if any('\u0C00' <= ch <= '\u0C7F' for ch in text):
+        return "te"
+    if any('\u0980' <= ch <= '\u09FF' for ch in text):
+        return "bn"
+    if any('\u0A80' <= ch <= '\u0AFF' for ch in text):
+        return "gu"
+    if any('\u0C80' <= ch <= '\u0CFF' for ch in text):
+        return "kn"
+    if any('\u0D00' <= ch <= '\u0D7F' for ch in text):
+        return "ml"
+    if any('\u0A00' <= ch <= '\u0A7F' for ch in text):
+        return "pa"
+    # Roman-script Hindi / Hinglish detection
+    lower = text.lower()
+    matched = sum(1 for w in _HINGLISH_KEYWORDS if w in lower.split() or (" " + w + " ") in (" " + lower + " "))
+    # Require minimum 1 keyword match; whole-word match avoids false positives
+    if matched >= 1:
+        return "hi-rom"
+    return "en"
+
+
+def _preferred_language_code(locale: str = None, language: str = None, message: str = "") -> str:
+    detected = _detect_language_from_text(message)
+    # Always prefer what the message itself says — stale UI locale loses
+    if detected:
+        return detected
+    code = (locale or language or "").lower().strip()
+    if code:
+        return code.split('-')[0]
+    return "en"
+
+
+def _translation_target_desc(lang_code: str) -> str:
+    """Human-readable translation target for the AI translation call."""
+    mapping = {
+        "hi-rom": (
+            "Hinglish (casual Roman-script Hindi mixed with English, WhatsApp style, "
+            "no Devanagari characters)"
+        ),
+        "hi": "Hindi using Devanagari script",
+        "ta": "Tamil", "te": "Telugu", "bn": "Bengali",
+        "mr": "Marathi", "gu": "Gujarati", "kn": "Kannada",
+        "ml": "Malayalam", "pa": "Punjabi", "ur": "Urdu",
+    }
+    return mapping.get(lang_code, "English")
+
+
+def _language_instruction(locale: str = None, language: str = None, message: str = "") -> str:
+    code = _preferred_language_code(locale, language, message)
+
+    if code == "hi-rom":
+        return (
+            "Respond in casual Hinglish — Roman-script Hindi mixed naturally with English, "
+            "exactly like a WhatsApp message. "
+            "Use short, friendly sentences. Abbreviations like 'kl', 'hogi', 'skta', 'nhi' are fine. "
+            "Do NOT use Devanagari script at all. "
+            "Example tone: 'sayd kal ho sakti hai, agar IMD ka record dekhu to thoda risk hai, "
+            "chhata rakh lena bhai!'"
+        )
+    if code == "hi":
+        return "Respond in Hindi using Devanagari script."
+    if code.startswith("ta"):
+        return "Respond in Tamil."
+    if code.startswith("te"):
+        return "Respond in Telugu."
+    if code.startswith("bn"):
+        return "Respond in Bengali."
+    if code.startswith("mr"):
+        return "Respond in Marathi."
+    if code.startswith("gu"):
+        return "Respond in Gujarati."
+    if code.startswith("kn"):
+        return "Respond in Kannada."
+    if code.startswith("ml"):
+        return "Respond in Malayalam."
+    if code.startswith("pa"):
+        return "Respond in Punjabi."
+    if code.startswith("ur"):
+        return "Respond in Urdu."
+    return "Respond in English."
 
 
 class AIOrchestrator:
@@ -100,8 +224,13 @@ class AIOrchestrator:
 
         # 3. Initial processing
         # We need to manually construct the messages history to support the loop
+        preferred_lang = _preferred_language_code(context.get("locale"), context.get("language"), message)
+        system_prompt = agent.system_prompt(context)
+        lang_rule = _language_instruction(context.get("locale"), context.get("language"), message)
+        if lang_rule:
+            system_prompt = f"{system_prompt}\n\nLANGUAGE RULE:\n- {lang_rule}\n- Use the same language/script as the user message."
         messages = [
-            {"role": "system", "content": agent.system_prompt(context)},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": message},
         ]
         
@@ -109,6 +238,9 @@ class AIOrchestrator:
         messages = _limit_chat_history(messages)
 
         try:
+            if not ai_client.client:
+                raise RuntimeError("Primary AI provider unavailable")
+
             response = await ai_client.client.chat.completions.create(
                 model=agent.model,
                 messages=messages,
@@ -131,12 +263,49 @@ class AIOrchestrator:
 
         except Exception as e:
             logger.error(f"Agent initial error: {e}")
+
+            # Backup provider path (Sarvam)
+            try:
+                backup = await sarvam_client.chat(message=message, system_prompt=system_prompt)
+                if backup and not backup.get("error") and backup.get("content"):
+                    backup_text = _sanitize_content(backup["content"])
+                    if preferred_lang not in ("en", "") and backup_text and ai_client.client:
+                        _tgt = _translation_target_desc(preferred_lang)
+                        translated = await ai_client.chat(
+                            system_prompt="Translate the text exactly into the requested style/language. Return only the translated text.",
+                            user_prompt=f"Target: {_tgt}\nText: {backup_text}",
+                            model=agent.model,
+                            max_tokens=min(agent.max_tokens, 500),
+                            temperature=0.1,
+                        )
+                        if translated and not translated.get("error") and translated.get("content"):
+                            backup_text = _sanitize_content(translated.get("content"))
+                    return {
+                        "success": True,
+                        "message": backup_text,
+                        "role": role,
+                        "confidence": 0.6,
+                        "token_cost": 0,
+                        "sources": [],
+                        "cached": False,
+                        "provider": "sarvam",
+                    }
+            except Exception as backup_exc:
+                logger.error("Backup provider failed: %s", backup_exc)
+
+            # Final graceful fallback so dashboards never crash
             return {
-                "success": False,
-                "message": f"AI Error: {str(e)}",
+                "success": True,
+                "message": (
+                    "I am temporarily unable to reach live AI services. "
+                    "Please retry in a moment. If this is urgent, call 112 for immediate help."
+                ),
                 "role": role,
-                "confidence": 0.0,
+                "confidence": 0.2,
                 "token_cost": 0,
+                "sources": [],
+                "cached": False,
+                "provider": "fallback",
             }
 
         # 4. Agent Loop (Max 5 turns)
@@ -220,6 +389,31 @@ class AIOrchestrator:
                 break
 
         # 5. Final Response Construction
+        final_content = _sanitize_content(final_content)
+
+        # If target language is non-English but output is mostly English, translate.
+        if preferred_lang not in ("en", "") and final_content:
+            ascii_letters = sum(1 for c in final_content if ('a' <= c.lower() <= 'z'))
+            ratio = ascii_letters / max(len(final_content), 1)
+            # For hi-rom the response is normally already Roman-script; skip translation
+            # unless strikingly formal (contains Devanagari or ratio very high).
+            has_devanagari = any('\u0900' <= ch <= '\u097F' for ch in final_content)
+            needs_translation = (
+                (preferred_lang == "hi-rom" and has_devanagari)
+                or (preferred_lang != "hi-rom" and ratio > 0.55)
+            )
+            if needs_translation and ai_client.client:
+                _tgt = _translation_target_desc(preferred_lang)
+                translated = await ai_client.chat(
+                    system_prompt="Translate the text exactly into the requested style/language. Return only the translated text.",
+                    user_prompt=f"Target: {_tgt}\nText: {final_content}",
+                    model=agent.model,
+                    max_tokens=min(agent.max_tokens, 500),
+                    temperature=0.1,
+                )
+                if translated and not translated.get("error") and translated.get("content"):
+                    final_content = _sanitize_content(translated.get("content"))
+
         confidence = _compute_confidence({"content": final_content}, params["tool_calls_executed"])
 
         response = {

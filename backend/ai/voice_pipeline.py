@@ -1,6 +1,6 @@
 """
 Voice Pipeline
-Audio upload → optional FFmpeg normalisation → Whisper → orchestrator → response.
+Audio upload ? optional FFmpeg normalisation ? STT (Sarvam first, Whisper fallback) ? orchestrator.
 """
 import os
 import uuid
@@ -11,6 +11,8 @@ from typing import Dict, Any
 from pathlib import Path
 
 from ai.openai_client import ai_client
+from ai.sarvam_client import sarvam_client
+from ai.colab_client import colab_client
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
 async def _normalize_audio(input_path: str) -> str:
     """Normalize audio to mono 16 kHz WAV via FFmpeg (if available)."""
     if not FFMPEG_AVAILABLE:
-        logger.warning("FFmpeg not found – skipping normalisation")
+        logger.warning("FFmpeg not found -- skipping normalisation")
         return input_path
 
     output_path = str(Path(input_path).with_suffix(".norm.wav"))
@@ -39,7 +41,7 @@ async def _normalize_audio(input_path: str) -> str:
     await proc.wait()
     if proc.returncode == 0 and os.path.exists(output_path):
         return output_path
-    logger.warning("FFmpeg normalisation failed – using raw file")
+    logger.warning("FFmpeg normalisation failed -- using raw file")
     return input_path
 
 
@@ -54,12 +56,10 @@ async def process_voice_query(
     Full voice pipeline:
     1. Save temp file
     2. Normalise with FFmpeg
-    3. Whisper transcription
+    3. STT: Sarvam Saarika first (no OpenAI token cost), Whisper as fallback
     4. Route transcript through AI orchestrator
-    5. Optionally generate TTS reply
-    6. Cleanup temp files
+    5. Cleanup temp files
     """
-    # 1. Save
     ext = Path(filename).suffix or ".wav"
     temp_path = str(TEMP_AUDIO_DIR / f"{uuid.uuid4().hex}{ext}")
     with open(temp_path, "wb") as f:
@@ -69,25 +69,82 @@ async def process_voice_query(
         # 2. Normalise
         normalised = await _normalize_audio(temp_path)
 
-        # 3. Transcribe
-        transcript_result = await ai_client.transcribe_audio(normalised, language=language)
-        if transcript_result.get("error"):
-            return {
-                "error": transcript_result["error"],
-                "transcript": None,
-                "response": None,
-            }
+        # 3. Optional fast path: delegate full voice processing to Colab.
+        if colab_client.enabled:
+            colab_result = await colab_client.process_voice(
+                file_path=normalised,
+                role=role,
+                language=language,
+                context=context or {},
+            )
+            if not colab_result.get("error") and colab_result.get("response"):
+                if not colab_result.get("transcript"):
+                    colab_result["transcript"] = ""
+                return colab_result
+            logger.info("Colab voice provider unavailable, using local fallback chain")
+
+        # 4. Transcribe -- Sarvam Saarika first (cheap), Whisper fallback
+        transcript_result = None
+        detected_language = language or "unknown"
+
+        if sarvam_client.enabled:
+            try:
+                sarvam_result = await asyncio.wait_for(
+                    sarvam_client.speech_to_text(normalised, language=language),
+                    timeout=10.0,
+                )
+            except asyncio.TimeoutError:
+                sarvam_result = {"error": "Sarvam STT timeout", "text": None}
+            if not sarvam_result.get("error") and sarvam_result.get("text"):
+                transcript_result = {
+                    "text": sarvam_result["text"],
+                    "language": sarvam_result.get("language") or language or "hi-IN",
+                    "error": None,
+                }
+                logger.info("STT via Sarvam Saarika")
+
+        if not transcript_result:
+            logger.info("Sarvam STT unavailable/failed -- falling back to Whisper")
+            try:
+                transcript_result = await asyncio.wait_for(
+                    ai_client.transcribe_audio(normalised, language=language),
+                    timeout=25.0,
+                )
+            except asyncio.TimeoutError:
+                transcript_result = {"error": "Whisper timeout", "text": None}
+            if transcript_result.get("error"):
+                return {
+                    "error": transcript_result["error"],
+                    "transcript": None,
+                    "response": None,
+                }
 
         transcript = transcript_result["text"]
-        logger.info(f"🎤 Transcript: {transcript[:120]}...")
+        detected_language = transcript_result.get("language") or language or "unknown"
+        logger.info(f"Transcript: {transcript[:120]}...")
 
-        # 4. Route to orchestrator
+        # 5. Route to orchestrator
         from ai.orchestrator import orchestrator
 
-        ai_response = await orchestrator.route_request(role, transcript, context)
+        ctx = dict(context or {})
+        if detected_language and detected_language != "unknown":
+            ctx["locale"] = detected_language
+            ctx["language"] = detected_language
+
+        try:
+            ai_response = await asyncio.wait_for(
+                orchestrator.route_request(role, transcript, ctx),
+                timeout=25.0,
+            )
+        except asyncio.TimeoutError:
+            ai_response = {
+                "message": "I heard you, but AI response took too long. Please try again with a shorter voice query.",
+                "usage": None,
+            }
 
         return {
             "transcript": transcript,
+            "detected_language": detected_language,
             "response": ai_response.get("message", ""),
             "usage": ai_response.get("usage"),
             "error": None,

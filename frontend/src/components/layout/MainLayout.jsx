@@ -17,7 +17,10 @@ import {
   Search,
   UserCircle,
   Phone,
-  LogOut
+  LogOut,
+  MessageSquare,
+  Heart,
+  CheckCheck
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +64,79 @@ const MainLayout = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showAlertsDropdown, setShowAlertsDropdown] = useState(false);
   const alertsDropdownRef = useRef(null);
+
+  // Community notifications
+  const [communityNotifs, setCommunityNotifs] = useState([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const COMMUNITY_API = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api/community';
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const fetchNotifs = async () => {
+      try {
+        const res = await fetch(`${COMMUNITY_API}/notifications/${user.id}?limit=10`);
+        if (res.ok) {
+          const data = await res.json();
+          setCommunityNotifs(data.notifications || []);
+          setUnreadNotifCount(data.unread_count || 0);
+        }
+      } catch (e) { /* silent */ }
+    };
+    fetchNotifs();
+    const iv = setInterval(fetchNotifs, 30000);
+    return () => clearInterval(iv);
+  }, [user?.id]);
+
+  const markAllNotifsRead = async () => {
+    if (!user?.id || unreadNotifCount === 0) return;
+    try {
+      await fetch(`${COMMUNITY_API}/notifications/read-all/${user.id}`, { method: 'POST' });
+      setCommunityNotifs(n => n.map(x => ({ ...x, is_read: true })));
+      setUnreadNotifCount(0);
+    } catch (e) { /* silent */ }
+  };
+
+  // ── Push notification registration (for proximity community alerts) ───────
+  useEffect(() => {
+    if (!user?.id) return;
+    const registerPush = async () => {
+      try {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+        // Request permission
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') return;
+        // Get VAPID public key
+        const BACKEND = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+        const keyRes = await fetch(`${BACKEND}/api/push/vapid-public-key`);
+        if (!keyRes.ok) return;
+        const { public_key } = await keyRes.json();
+        // Register SW
+        const reg = await navigator.serviceWorker.ready;
+        // Convert VAPID key
+        const raw = atob(public_key.replace(/-/g, '+').replace(/_/g, '/').replace(/\s/g, ''));
+        const uint8 = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) uint8[i] = raw.charCodeAt(i);
+        // Subscribe
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: uint8 });
+        // Get current GPS position for proximity
+        let lat = null; let lon = null;
+        try {
+          const pos = await new Promise((res, rej) =>
+            navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000, enableHighAccuracy: true })
+          );
+          lat = pos.coords.latitude;
+          lon = pos.coords.longitude;
+        } catch {}
+        // Send subscription + location to backend
+        await fetch(`${BACKEND}/api/notifications/subscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscription: sub.toJSON(), user_id: user.id, user_lat: lat, user_lon: lon }),
+        });
+      } catch (e) { /* silent — push not critical */ }
+    };
+    registerPush();
+  }, [user?.id]);
 
   // Close alerts dropdown when clicking outside
   useEffect(() => {
@@ -264,42 +340,94 @@ const MainLayout = () => {
                 variant="ghost" 
                 size="icon" 
                 className="relative"
-                onClick={() => setShowAlertsDropdown(!showAlertsDropdown)}
+                onClick={() => { setShowAlertsDropdown(!showAlertsDropdown); if (!showAlertsDropdown) markAllNotifsRead(); }}
               >
                 <Bell className="h-5 w-5 text-muted-foreground" />
-                {alerts && alerts.length > 0 && (
-                  <span className="absolute top-2 right-2 h-2 w-2 bg-destructive rounded-full border-2 border-background animate-pulse"></span>
+                {(alerts?.length > 0 || unreadNotifCount > 0) && (
+                  <span className="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-white border-2 border-background">
+                    {(unreadNotifCount + (alerts?.length || 0)) > 9 ? '9+' : (unreadNotifCount + (alerts?.length || 0))}
+                  </span>
                 )}
               </Button>
               
-              {/* Alerts Dropdown */}
+              {/* Alerts + Notifications Dropdown */}
               {showAlertsDropdown && (
-                <div className="absolute right-0 top-12 w-80 bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="absolute right-0 top-12 w-96 bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-3 flex items-center justify-between">
                     <h3 className="font-semibold flex items-center gap-2">
                       <Bell className="w-4 h-4" />
-                      Alerts ({alerts?.length || 0})
+                      Notifications
+                      {(unreadNotifCount + (alerts?.length || 0)) > 0 && (
+                        <span className="bg-white/25 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                          {unreadNotifCount + (alerts?.length || 0)}
+                        </span>
+                      )}
                     </h3>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 text-white hover:bg-white/20 rounded-lg"
-                      onClick={() => setShowAlertsDropdown(false)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      {unreadNotifCount > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-white hover:bg-white/20 rounded-lg"
+                          title="Mark all read"
+                          onClick={markAllNotifsRead}
+                        >
+                          <CheckCheck className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-white hover:bg-white/20 rounded-lg"
+                        onClick={() => setShowAlertsDropdown(false)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="max-h-96 overflow-y-auto scrollbar-thin">
-                    {alerts && alerts.length > 0 ? (
-                      <div className="divide-y divide-border">
+
+                  <div className="max-h-[420px] overflow-y-auto scrollbar-thin">
+                    {/* Community notifications */}
+                    {communityNotifs.length > 0 && (
+                      <div>
+                        <div className="px-3 py-1.5 bg-muted/50 border-b">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Community Activity</span>
+                        </div>
+                        {communityNotifs.map((n) => (
+                          <div
+                            key={n.id}
+                            className={`p-3 border-b hover:bg-muted/40 cursor-pointer transition-colors flex items-start gap-3 ${!n.is_read ? 'bg-blue-50/60 dark:bg-blue-900/10' : ''}`}
+                            onClick={() => { navigate('/app/community'); setShowAlertsDropdown(false); }}
+                          >
+                            <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${!n.is_read ? 'bg-blue-500' : 'bg-transparent'}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                {n.type === 'comment' && <MessageSquare className="w-3 h-3 text-blue-500 shrink-0" />}
+                                {n.type === 'reply' && <MessageSquare className="w-3 h-3 text-indigo-500 shrink-0" />}
+                                {n.type === 'like' && <Heart className="w-3 h-3 text-red-500 shrink-0" />}
+                                <p className="text-xs font-semibold text-foreground truncate">{n.title}</p>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground line-clamp-2">{n.message}</p>
+                              <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                                {n.timestamp ? new Date(n.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* System Alerts */}
+                    {alerts && alerts.length > 0 && (
+                      <div>
+                        <div className="px-3 py-1.5 bg-muted/50 border-b">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Disaster Alerts</span>
+                        </div>
                         {alerts.slice(0, 5).map((alert, idx) => (
                           <div
                             key={alert.id || idx}
-                            className="p-3 hover:bg-muted/50 cursor-pointer transition-colors"
-                            onClick={() => {
-                              navigate('/app/alerts');
-                              setShowAlertsDropdown(false);
-                            }}
+                            className="p-3 hover:bg-muted/50 cursor-pointer transition-colors border-b last:border-0"
+                            onClick={() => { navigate('/app/alerts'); setShowAlertsDropdown(false); }}
                           >
                             <div className="flex items-start gap-2">
                               <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
@@ -310,43 +438,46 @@ const MainLayout = () => {
                                   : 'bg-blue-500'
                               }`} />
                               <div className="flex-1 min-w-0">
-                                <h4 className="text-sm font-semibold text-foreground truncate">
-                                  {alert.title}
-                                </h4>
-                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                                  {alert.description || alert.message}
-                                </p>
-                                <p className="text-[10px] text-muted-foreground mt-1">
-                                  {alert.location || 'Unknown'} • {new Date(alert.issued_at || alert.time).toLocaleTimeString()}
+                                <h4 className="text-xs font-semibold text-foreground truncate">{alert.title}</h4>
+                                <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{alert.description || alert.message}</p>
+                                <p className="text-[10px] text-muted-foreground mt-0.5">
+                                  {alert.location || 'Unknown'} · {alert.issued_at || alert.time ? new Date(alert.issued_at || alert.time).toLocaleTimeString() : ''}
                                 </p>
                               </div>
                             </div>
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      <div className="p-6 text-center text-muted-foreground">
+                    )}
+
+                    {/* Empty state */}
+                    {(!alerts || alerts.length === 0) && communityNotifs.length === 0 && (
+                      <div className="p-8 text-center text-muted-foreground">
                         <Bell className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                        <p className="text-sm">No active alerts</p>
-                        <p className="text-xs mt-1">You're all good for now!</p>
+                        <p className="text-sm font-medium">All caught up!</p>
+                        <p className="text-xs mt-1">No notifications right now.</p>
                       </div>
                     )}
                   </div>
-                  {alerts && alerts.length > 0 && (
-                    <div className="border-t border-border p-2 bg-muted/30">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="w-full text-xs hover:bg-muted"
-                        onClick={() => {
-                          navigate('/app/alerts');
-                          setShowAlertsDropdown(false);
-                        }}
-                      >
-                        View All Alerts →
-                      </Button>
-                    </div>
-                  )}
+
+                  <div className="border-t border-border p-2 bg-muted/30 flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="flex-1 text-xs hover:bg-muted"
+                      onClick={() => { navigate('/app/alerts'); setShowAlertsDropdown(false); }}
+                    >
+                      View All Alerts
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="flex-1 text-xs hover:bg-muted"
+                      onClick={() => { navigate('/app/community'); setShowAlertsDropdown(false); }}
+                    >
+                      Go to Community
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

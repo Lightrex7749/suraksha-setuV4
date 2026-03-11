@@ -15,6 +15,18 @@ import axios from 'axios';
 
 const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
 
+const detectLanguage = (text = '') => {
+  if (!text) return 'en-IN';
+  if (/[\u0900-\u097F]/.test(text)) return 'hi-IN';
+  if (/[\u0B80-\u0BFF]/.test(text)) return 'ta-IN';
+  if (/[\u0C00-\u0C7F]/.test(text)) return 'te-IN';
+  if (/[\u0980-\u09FF]/.test(text)) return 'bn-IN';
+  const lower = text.toLowerCase();
+    // Expanded Hinglish keyword detection (returns hi-IN for TTS, sent as hi-rom to backend)
+    if (/(namaste|kaise|kya|mausam|barish|aaj|kal|kl|hogi|hoga|nahi|nhi|yaar|bhai|theek|thik|accha|achha|pata|chal|bata|skta|skti|ager|agar|sayd|shayad|bilkul|zaroor|bahut|bohot|ho\s|bas\s)/.test(lower)) return 'hi-IN';
+  return 'en-IN';
+};
+
 const EnhancedAIChatInterface = () => {
   const [messages, setMessages] = useState([
     {
@@ -30,11 +42,16 @@ const EnhancedAIChatInterface = () => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false); // NEW: Voice conversation mode
+  const [voiceInputMode, setVoiceInputMode] = useState('toggle'); // 'toggle' | 'ptt'
   const [detectedLanguage, setDetectedLanguage] = useState('en-IN'); // NEW: Auto-detected language
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const liveTranscriptRef = useRef('');
+  const pttHoldActiveRef = useRef(false);
   const [mediaRecorder, setMediaRecorder] = useState(null);
   const [audioChunks, setAudioChunks] = useState([]);
   const scrollAreaRef = useRef(null);
   const inputRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -45,6 +62,10 @@ const EnhancedAIChatInterface = () => {
       }
     }
   }, [messages]);
+
+  useEffect(() => {
+    liveTranscriptRef.current = liveTranscript;
+  }, [liveTranscript]);
 
   // Focus input on mount
   useEffect(() => {
@@ -85,11 +106,16 @@ const EnhancedAIChatInterface = () => {
     setIsLoading(true);
 
     try {
+      const detectedLang = detectLanguage(userMessage.text);
+      setDetectedLanguage(detectedLang);
+
       const response = await axios.post(`${API_URL}/ai/chat`, {
         message: userMessage.text,
         query: userMessage.text,
         role: 'citizen',
-        context: { domain: 'dashboard', language: 'en-IN' },
+        language: detectedLang,
+        locale: detectedLang,
+        context: { domain: 'dashboard', language: detectedLang, locale: detectedLang },
       });
 
       const botMessage = {
@@ -103,8 +129,8 @@ const EnhancedAIChatInterface = () => {
       setMessages((prev) => [...prev, botMessage]);
 
       // Auto-speak response if speech synthesis is available
-      if ('speechSynthesis' in window && response.data.response) {
-        speakText(response.data.response);
+      if (response.data.response) {
+        speakText(response.data.response, detectedLang);
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -123,6 +149,7 @@ const EnhancedAIChatInterface = () => {
 
   // Voice Recording
   const startRecording = async () => {
+    if (isRecording) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -145,7 +172,7 @@ const EnhancedAIChatInterface = () => {
 
       recorder.onstop = async () => {
         const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-        await sendVoiceMessage(audioBlob);
+        await sendVoiceMessage(audioBlob, liveTranscriptRef.current);
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -153,7 +180,36 @@ const EnhancedAIChatInterface = () => {
       setMediaRecorder(recorder);
       setIsRecording(true);
       setAudioChunks(chunks);
-      // Recording started
+      setLiveTranscript('');
+
+      // Parallel browser speech recognition for live transcript display
+      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recog = new SR();
+        recog.continuous = true;
+        recog.interimResults = true;
+          // Use detectedLanguage but try hi-IN for broader multilingual capture
+          const recogLang = detectedLanguage && detectedLanguage !== 'en-IN' ? detectedLanguage : 'hi-IN';
+          recog.lang = recogLang;
+        recog.onresult = (event) => {
+          const transcript = Array.from(event.results)
+            .map(r => r[0]?.transcript || '')
+            .join('')
+            .trim();
+          if (transcript) setLiveTranscript(transcript);
+        };
+          recog.onerror = (e) => {
+            // If language model not available, retry with en-IN
+            if (e.error === 'language-not-supported' && recog.lang !== 'en-IN') {
+              try { recog.lang = 'en-IN'; recog.start(); } catch (_) {}
+            }
+          };
+        try {
+          recog.start();
+          recognitionRef.current = recog;
+        } catch (_) {}
+      }
+        toast.info('🎤 Listening... speak now', { duration: 2000 });
     } catch (error) {
       console.error('Error starting recording:', error);
       console.error('Microphone access denied');
@@ -161,6 +217,10 @@ const EnhancedAIChatInterface = () => {
   };
 
   const stopRecording = () => {
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (_) {}
+      recognitionRef.current = null;
+    }
     if (mediaRecorder && mediaRecorder.state === 'recording') {
       mediaRecorder.stop();
       setIsRecording(false);
@@ -168,13 +228,28 @@ const EnhancedAIChatInterface = () => {
     }
   };
 
-  const sendVoiceMessage = async (audioBlob) => {
+  const handleMicPressStart = (e) => {
+    if (voiceInputMode !== 'ptt') return;
+    e?.preventDefault?.();
+    pttHoldActiveRef.current = true;
+    startRecording();
+  };
+
+  const handleMicPressEnd = (e) => {
+    if (voiceInputMode !== 'ptt') return;
+    e?.preventDefault?.();
+    if (!pttHoldActiveRef.current) return;
+    pttHoldActiveRef.current = false;
+    stopRecording();
+  };
+
+  const sendVoiceMessage = async (audioBlob, interimTranscript = '') => {
     setIsLoading(true);
 
     const userMessage = {
       id: Date.now(),
       type: 'user',
-      text: '🎤 *Voice message*',
+      text: interimTranscript?.trim() || '🎤 Voice message',
       timestamp: new Date(),
       isVoice: true
     };
@@ -184,10 +259,13 @@ const EnhancedAIChatInterface = () => {
       const formData = new FormData();
       formData.append('file', audioBlob, 'voice.webm');
 
-      const response = await axios.post(`${API_URL}/ai/voice`, formData, {
+        // Pass language hint so Sarvam STT picks the right model
+        const hintLang = detectedLanguage || 'hi-IN';
+        const response = await axios.post(`${API_URL}/ai/voice?role=citizen&language=${hintLang}`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+          timeout: 45000,
       });
 
       // Update user message with transcription
@@ -209,25 +287,116 @@ const EnhancedAIChatInterface = () => {
 
       setMessages((prev) => [...prev, botMessage]);
 
-      // Speak the response
-      speakText(response.data.response);
+      // Speak the response in detected speech language
+        const rawLang = response.data.detected_language || detectLanguage(response.data.transcript || '');
+        // Normalise to BCP-47 with -IN for Indian TTS (e.g. "hi" → "hi-IN")
+        const transcriptLang = rawLang.includes('-') ? rawLang : (rawLang ? `${rawLang}-IN` : 'en-IN');
+      setDetectedLanguage(transcriptLang || 'en-IN');
+      speakText(response.data.response, transcriptLang || 'en-IN');
+      setLiveTranscript('');
 
       // Voice processed
     } catch (error) {
       console.error('Error processing voice:', error);
-      console.error('Voice transcription failed');
-      // Remove the voice message on error
-      setMessages((prev) => prev.filter(msg => msg.id !== userMessage.id));
+      const isTimeout = error?.code === 'ECONNABORTED';
+      const fallbackText = (interimTranscript || '').trim();
+
+      // Best-effort recovery: if browser SR captured transcript, route it via text chat API.
+      if (fallbackText) {
+        try {
+          const detectedLang = detectLanguage(fallbackText);
+          const fallbackResponse = await axios.post(`${API_URL}/ai/chat`, {
+            message: fallbackText,
+            query: fallbackText,
+            role: 'citizen',
+            language: detectedLang,
+            locale: detectedLang,
+            context: { domain: 'dashboard', language: detectedLang, locale: detectedLang, source: 'voice-fallback' },
+          }, { timeout: 25000 });
+
+          setMessages((prev) =>
+            prev.map(msg =>
+              msg.id === userMessage.id
+                ? { ...msg, text: fallbackText }
+                : msg
+            ).concat({
+              id: Date.now() + 2,
+              type: 'bot',
+              text: fallbackResponse?.data?.response || 'I heard you. Please retry once for better voice clarity.',
+              timestamp: new Date(),
+            })
+          );
+          toast.info('Recovered from voice issue using transcript');
+        } catch (fallbackErr) {
+          console.error('Voice fallback chat failed:', fallbackErr);
+          setMessages((prev) =>
+            prev.map(msg =>
+              msg.id === userMessage.id
+                ? { ...msg, text: fallbackText }
+                : msg
+            ).concat({
+              id: Date.now() + 2,
+              type: 'bot',
+              text: isTimeout
+                ? 'Voice request timed out. Try a shorter message (5-10 sec) and speak clearly.'
+                : 'Voice failed and fallback also failed. Please type your message once.',
+              timestamp: new Date(),
+            })
+          );
+          toast.error('Voice + fallback failed');
+        }
+      } else {
+        setMessages((prev) =>
+          prev.map(msg =>
+            msg.id === userMessage.id
+              ? { ...msg, text: '🎤 Voice message (processing failed)' }
+              : msg
+          ).concat({
+            id: Date.now() + 2,
+            type: 'bot',
+            text: isTimeout
+              ? 'Voice request timed out. Try a shorter message (5-10 sec) and speak clearly.'
+              : 'Could not capture enough voice. Please hold the mic and speak clearly, then release.',
+            timestamp: new Date(),
+          })
+        );
+        toast.error(isTimeout ? 'Voice request timed out' : 'Voice processing failed');
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   // Text-to-Speech with language support
-  const speakText = (text, languageCode = null) => {
+  const speakText = async (text, languageCode = null) => {
+    if (!text) return;
+
+      // Normalise lang code — strip hi-rom (Sarvam TTS accepts hi-IN), ensure -IN suffix for Indian langs
+      const rawLang = languageCode || detectedLanguage || 'en-IN';
+      const lang = rawLang === 'hi-rom' ? 'hi-IN'
+        : rawLang.includes('-') ? rawLang
+        : rawLang ? `${rawLang}-IN` : 'en-IN';
+    // Backend TTS first for consistent voice quality
+    try {
+      const ttsRes = await axios.post(
+        `${API_URL}/ai/tts`,
+          { text: text.substring(0, 600), language: lang, voice: 'alloy', speed: 1.05 },
+        { responseType: 'blob' }
+      );
+      const audioUrl = URL.createObjectURL(ttsRes.data);
+      const audio = new Audio(audioUrl);
+      setIsSpeaking(true);
+      audio.onended = () => { setIsSpeaking(false); URL.revokeObjectURL(audioUrl); };
+      audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(audioUrl); };
+      await audio.play();
+      return;
+    } catch (e) {
+      // Fall back to browser speech synthesis
+    }
+
     if (!('speechSynthesis' in window)) {
       console.warn('Speech synthesis not supported');
-      return Promise.resolve();
+      return;
     }
 
     return new Promise((resolve) => {
@@ -245,7 +414,6 @@ const EnhancedAIChatInterface = () => {
       const utterance = new SpeechSynthesisUtterance(cleanText);
 
       // Use detected language or default to Indian English
-      const lang = languageCode || detectedLanguage || 'en-IN';
       utterance.lang = lang;
 
       utterance.rate = 0.9;
@@ -500,11 +668,20 @@ const EnhancedAIChatInterface = () => {
 
         {/* Input Area */}
         <div className="p-4 bg-card border-t border-border shrink-0">
+          {isRecording && (
+            <div className="mb-2 text-xs text-muted-foreground">
+              Listening: {liveTranscript || '...'}
+            </div>
+          )}
           <AIInput
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onSubmit={handleSendMessage}
-            onMicClick={isRecording ? stopRecording : startRecording}
+            onMicClick={voiceInputMode === 'toggle' ? (isRecording ? stopRecording : startRecording) : undefined}
+            onMicDown={handleMicPressStart}
+            onMicUp={handleMicPressEnd}
+            voiceInputMode={voiceInputMode}
+            onVoiceInputModeChange={setVoiceInputMode}
             isRecording={isRecording}
             isLoading={isLoading}
             placeholder="Ask Suraksha AI..."

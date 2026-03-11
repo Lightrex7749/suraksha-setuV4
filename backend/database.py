@@ -172,8 +172,26 @@ class PushSubscription(Base):
     user_id: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey('users.id', ondelete='CASCADE'))
     subscription_json: Mapped[Dict] = mapped_column(JSON)
     user_agent: Mapped[Optional[str]] = mapped_column(String(500))
+    user_lat: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # GPS latitude for proximity
+    user_lon: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # GPS longitude for proximity
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class UserReport(Base):
+    """Reports submitted by users about false/harmful posts or users."""
+    __tablename__ = 'user_reports'
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    reporter_id: Mapped[str] = mapped_column(String(255), index=True)
+    reporter_name: Mapped[str] = mapped_column(String(255))
+    reported_user_id: Mapped[str] = mapped_column(String(255), index=True)
+    reported_user_name: Mapped[str] = mapped_column(String(255))
+    post_id: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey('community_posts.id', ondelete='SET NULL'), nullable=True, index=True)
+    reason: Mapped[str] = mapped_column(String(100))   # 'misinformation','spam','harassment','inappropriate','false_emergency'
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(50), default='pending')   # 'pending','reviewed','resolved'
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
 
 class CommunityPost(Base):
@@ -190,6 +208,8 @@ class CommunityPost(Base):
     likes: Mapped[int] = mapped_column(Integer, default=0)
     shares: Mapped[int] = mapped_column(Integer, default=0)
     comments_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     is_public: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -258,6 +278,47 @@ class AILog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
 
+class DirectMessage(Base):
+    """User-to-user direct messages linked to a community post."""
+    __tablename__ = 'direct_messages'
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    # Sender
+    from_user_id: Mapped[str] = mapped_column(String(255), index=True)
+    from_name: Mapped[str] = mapped_column(String(255))
+    from_photo: Mapped[Optional[str]] = mapped_column(String(1000))
+    # Recipient
+    to_user_id: Mapped[str] = mapped_column(String(255), index=True)
+    to_name: Mapped[str] = mapped_column(String(255))
+    # Context post (optional but usually set)
+    post_id: Mapped[Optional[str]] = mapped_column(String(255), ForeignKey('community_posts.id', ondelete='SET NULL'), index=True)
+    # Message body
+    content: Mapped[str] = mapped_column(Text)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class Notification(Base):
+    """In-app notification for community activity (comments, likes, new posts)."""
+    __tablename__ = 'notifications'
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)       # recipient
+    type: Mapped[str] = mapped_column(String(50))                       # 'comment','reply','like','new_help','new_offer','new_emergency','dm'
+    title: Mapped[str] = mapped_column(String(500))
+    message: Mapped[str] = mapped_column(Text)
+    post_id: Mapped[Optional[str]] = mapped_column(
+        String(255), ForeignKey('community_posts.id', ondelete='SET NULL'), nullable=True, index=True
+    )
+    from_user_id: Mapped[str] = mapped_column(String(255))
+    from_name: Mapped[str] = mapped_column(String(255))
+    from_photo: Mapped[Optional[str]] = mapped_column(String(1000))
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
 # ==================== DATABASE SESSION DEPENDENCY ====================
 
 async def get_db() -> AsyncSession:
@@ -273,10 +334,22 @@ async def get_db() -> AsyncSession:
 
 async def init_db():
     """Initialize database tables"""
+    from sqlalchemy import text
     async with engine.begin() as conn:
         # Create all tables
         await conn.run_sync(Base.metadata.create_all)
-        print("[DB] Database tables created successfully")
+        # Add new columns to existing tables if they don't exist (safe migrations)
+        for stmt in [
+            "ALTER TABLE community_posts ADD COLUMN is_resolved BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE community_posts ADD COLUMN resolved_at DATETIME",
+            "ALTER TABLE push_subscriptions ADD COLUMN user_lat REAL",
+            "ALTER TABLE push_subscriptions ADD COLUMN user_lon REAL",
+        ]:
+            try:
+                await conn.execute(text(stmt))
+            except Exception:
+                pass  # Column already exists
+        print("[DB] Database tables created/updated successfully")
 
 
 async def close_db():
