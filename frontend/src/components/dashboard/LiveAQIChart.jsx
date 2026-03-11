@@ -23,10 +23,10 @@ const LiveAQIChart = () => {
         
         if (historyRes.data.history) {
           const chartData = historyRes.data.history.map(item => ({
-            date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            date: new Date(item.timestamp || item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
             aqi: item.aqi,
             pm25: item.pm25,
-            category: item.category
+            category: item.aqi_label
           }));
           
           setData(chartData);

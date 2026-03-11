@@ -32,6 +32,8 @@ import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tool
 import { getWeatherByLocation, getAQIByLocation } from '@/services/weatherApi';
 import axios from 'axios';
 
+const BACKEND = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
 const Weather = () => {
   const [loading, setLoading] = useState(false);
   const [location, setLocation] = useState('');
@@ -61,7 +63,7 @@ const Weather = () => {
     setError(null);
     
     try {
-      const response = await axios.get(`${process.env.REACT_APP_BACKEND_URL}/api/weather/auto-detect`);
+      const response = await axios.get(`${BACKEND}/api/weather/auto-detect`);
       
       if (response.data && response.data.location) {
         // Get complete weather data with hourly and daily forecasts
@@ -87,7 +89,7 @@ const Weather = () => {
           
           // Load 7-day AQI history
           const historyResponse = await axios.get(
-            `${process.env.REACT_APP_BACKEND_URL}/api/aqi/history?lat=${response.data.location.lat}&lon=${response.data.location.lon}&days=7`
+            `${BACKEND}/api/aqi/history?lat=${response.data.location.lat}&lon=${response.data.location.lon}&days=7`
           );
           setAQIHistory(historyResponse.data);
         } catch (err) {
@@ -131,7 +133,7 @@ const Weather = () => {
         try {
           const coords = weather.value.location;
           const historyResponse = await axios.get(
-            `${process.env.REACT_APP_BACKEND_URL}/api/aqi/history?lat=${coords.lat}&lon=${coords.lon}&days=7`
+            `${BACKEND}/api/aqi/history?lat=${coords.lat}&lon=${coords.lon}&days=7`
           );
           setAQIHistory(historyResponse.data);
         } catch (err) {
@@ -244,10 +246,10 @@ const Weather = () => {
   const windSpeed = Math.round(current.wind_speed || 12);
   const windDirection = current.wind_direction || 'NW';
   const pressure = Math.round(current.pressure || 1008);
-  const aqiValue = aqiData?.aqi || aqiData?.current?.aqi || 142;
-  const aqiStatus = aqiData?.aqi_label || aqiData?.current?.category || 'Moderate';
-  const pm25 = aqiData?.pm25 || aqiData?.current?.pm25 || 45;
-  const pm10 = aqiData?.pm10 || aqiData?.current?.pm10 || 85;
+  const aqiValue = aqiData?.aqi ?? aqiData?.current?.aqi ?? null;
+  const aqiStatus = aqiData?.aqi_label || aqiData?.current?.category || 'N/A';
+  const pm25 = aqiData?.pm25 ?? aqiData?.current?.pm25 ?? null;
+  const pm10 = aqiData?.pm10 ?? aqiData?.current?.pm10 ?? null;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -274,7 +276,7 @@ const Weather = () => {
           <Button variant="outline" size="icon" onClick={handleAutoDetect} disabled={loading} title="Use my location">
             <MapPin className="w-4 h-4" />
           </Button>
-          <Button variant="outline" size="icon" onClick={() => loadWeatherData(currentLocation)} disabled={loading} title="Refresh">
+          <Button variant="outline" size="icon" onClick={loadAutoDetectWeather} disabled={loading} title="Refresh">
             <RefreshCw className="w-4 h-4" />
           </Button>
         </div>
@@ -440,7 +442,7 @@ const Weather = () => {
                       />
                       <motion.circle
                         initial={{ strokeDashoffset: 377 }}
-                        animate={{ strokeDashoffset: 377 - (377 * Math.min(aqiValue, 500) / 500) }}
+                        animate={{ strokeDashoffset: 377 - (377 * Math.min(aqiValue ?? 0, 500) / 500) }}
                         transition={{ duration: 1, ease: "easeOut" }}
                         cx="72"
                         cy="72"
@@ -451,21 +453,21 @@ const Weather = () => {
                         strokeDasharray="377"
                         strokeLinecap="round"
                         className={
-                          aqiValue <= 50 ? 'text-green-500' :
-                          aqiValue <= 100 ? 'text-yellow-500' :
-                          aqiValue <= 150 ? 'text-orange-500' :
-                          aqiValue <= 200 ? 'text-red-500' :
+                          (aqiValue ?? 0) <= 50 ? 'text-green-500' :
+                          (aqiValue ?? 0) <= 100 ? 'text-yellow-500' :
+                          (aqiValue ?? 0) <= 150 ? 'text-orange-500' :
+                          (aqiValue ?? 0) <= 200 ? 'text-red-500' :
                           'text-purple-500'
                         }
                       />
                     </svg>
                     <div className="absolute text-center">
-                      <div className="text-3xl font-bold text-foreground">{aqiValue}</div>
+                      <div className="text-3xl font-bold text-foreground">{aqiValue ?? '--'}</div>
                       <div className={`text-xs font-semibold uppercase tracking-wide ${
-                        aqiValue <= 50 ? 'text-green-600' :
-                        aqiValue <= 100 ? 'text-yellow-600' :
-                        aqiValue <= 150 ? 'text-orange-600' :
-                        aqiValue <= 200 ? 'text-red-600' :
+                        (aqiValue ?? 0) <= 50 ? 'text-green-600' :
+                        (aqiValue ?? 0) <= 100 ? 'text-yellow-600' :
+                        (aqiValue ?? 0) <= 150 ? 'text-orange-600' :
+                        (aqiValue ?? 0) <= 200 ? 'text-red-600' :
                         'text-purple-600'
                       }`}>{aqiStatus}</div>
                     </div>
@@ -481,14 +483,14 @@ const Weather = () => {
                   >
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground font-medium">PM 2.5</span>
-                      <span className="font-bold">{pm25} <span className="text-xs text-muted-foreground">µg/m³</span></span>
+                      <span className="font-bold">{pm25 ?? '--'} <span className="text-xs text-muted-foreground">µg/m³</span></span>
                     </div>
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
                       <motion.div
                         initial={{ width: 0 }}
-                        animate={{ width: `${Math.min(pm25, 100)}%` }}
+                        animate={{ width: `${Math.min(pm25 ?? 0, 100)}%` }}
                         transition={{ duration: 0.8, delay: 0.3 }}
-                        className={`h-full ${pm25 <= 35 ? 'bg-green-500' : pm25 <= 75 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                        className={`h-full ${(pm25 ?? 0) <= 35 ? 'bg-green-500' : (pm25 ?? 0) <= 75 ? 'bg-yellow-500' : 'bg-red-500'}`}
                       />
                     </div>
                   </motion.div>
@@ -500,14 +502,14 @@ const Weather = () => {
                   >
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground font-medium">PM 10</span>
-                      <span className="font-bold">{pm10} <span className="text-xs text-muted-foreground">µg/m³</span></span>
+                      <span className="font-bold">{pm10 ?? '--'} <span className="text-xs text-muted-foreground">µg/m³</span></span>
                     </div>
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
                       <motion.div
                         initial={{ width: 0 }}
-                        animate={{ width: `${Math.min(pm10 / 2, 100)}%` }}
+                        animate={{ width: `${Math.min((pm10 ?? 0) / 2, 100)}%` }}
                         transition={{ duration: 0.8, delay: 0.5 }}
-                        className={`h-full ${pm10 <= 50 ? 'bg-green-500' : pm10 <= 100 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                        className={`h-full ${(pm10 ?? 0) <= 50 ? 'bg-green-500' : (pm10 ?? 0) <= 100 ? 'bg-yellow-500' : 'bg-red-500'}`}
                       />
                     </div>
                   </motion.div>
