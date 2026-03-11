@@ -28,6 +28,7 @@ import DirectMessagePanel from '@/components/community/DirectMessagePanel';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLocation as useAppLocation } from '@/contexts/LocationContext';
 
 const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
 
@@ -43,6 +44,10 @@ const BADGE_CONFIG = {
 
 const Community = () => {
   const { user } = useAuth();
+  const { gpsPincode, homePincode } = useAppLocation();
+
+  // Effective pincode: prefer home, fall back to GPS
+  const effectivePincode = homePincode || gpsPincode;
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [showDMPanel, setShowDMPanel] = useState(false);
   const [posts, setPosts] = useState([]);
@@ -52,6 +57,13 @@ const Community = () => {
   const [sortBy, setSortBy] = useState('recent');
   const [activeTab, setActiveTab] = useState('feed');
   const [loading, setLoading] = useState(true);
+
+  // Auto-seed pincode filter from user's location context on first load
+  useEffect(() => {
+    if (effectivePincode && !activePin) {
+      setActivePin(effectivePincode);
+    }
+  }, [effectivePincode]); // eslint-disable-line
 
   // Pincode filter
   const [pincodeInput, setPincodeInput] = useState('');
@@ -193,7 +205,12 @@ const Community = () => {
 
   const handlePostCreated = async (newPost) => {
     try {
-      const response = await axios.post(`${API_URL}/community/posts`, newPost);
+      // Attach the user's pincode so the backend can do targeted delivery
+      const postWithPincode = {
+        ...newPost,
+        pincode: newPost.pincode || effectivePincode || undefined,
+      };
+      const response = await axios.post(`${API_URL}/community/posts`, postWithPincode);
       if (response.data.success && response.data.post) {
         setPosts((prev) => [response.data.post, ...prev]);
         toast.success('Post published!');
