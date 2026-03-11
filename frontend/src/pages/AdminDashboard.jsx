@@ -14,7 +14,10 @@ import {
   MessageSquare,
   Shield,
   FileWarning,
-  RefreshCw
+  RefreshCw,
+  Send,
+  Bot,
+  Radio
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -61,6 +64,15 @@ const AdminDashboard = () => {
     description: '',
   });
 
+  // Telegram state
+  const [telegramStats, setTelegramStats] = useState(null);
+  const [tgTestChatId, setTgTestChatId] = useState('');
+  const [tgTestMsg, setTgTestMsg] = useState('');
+  const [tgBroadcastMsg, setTgBroadcastMsg] = useState('');
+  const [tgBroadcastAlertId, setTgBroadcastAlertId] = useState('');
+  const [tgSending, setTgSending] = useState(false);
+  const [tgFeedback, setTgFeedback] = useState('');
+
   const getAuthHeaders = () => {
     const token = localStorage.getItem('auth_token') || '';
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -68,7 +80,7 @@ const AdminDashboard = () => {
 
   const fetchData = useCallback(async () => {
     try {
-      const [alertsRes, pendingRes, safetyRes, smsRes, incidentRes, smsLogRes, statsRes, logsRes] = await Promise.allSettled([
+      const [alertsRes, pendingRes, safetyRes, smsRes, incidentRes, smsLogRes, statsRes, logsRes, tgRes] = await Promise.allSettled([
         fetch(`${API_URL}/admin/alerts`).then(r => r.json()),
         fetch(`${API_URL}/admin/alerts/pending`).then(r => r.json()),
         fetch(`${API_URL}/admin/safety/status`).then(r => r.json()),
@@ -77,6 +89,7 @@ const AdminDashboard = () => {
         fetch(`${API_URL}/api/sms/audit-log?limit=20`).then(r => r.json()),
         fetch(`${API_URL}/admin/stats`).then(r => r.json()),
         fetch(`${API_URL}/admin/logs?limit=10`).then(r => r.json()),
+        fetch(`${API_URL}/admin/telegram/stats`).then(r => r.json()),
       ]);
       if (alertsRes.status === 'fulfilled') setAlerts(alertsRes.value?.alerts || alertsRes.value || []);
       if (pendingRes.status === 'fulfilled') setPendingAlerts(pendingRes.value?.pending_alerts || []);
@@ -86,6 +99,7 @@ const AdminDashboard = () => {
       if (smsLogRes.status === 'fulfilled') setSmsLogs(smsLogRes.value?.logs || []);
       if (statsRes.status === 'fulfilled') setStats(statsRes.value);
       if (logsRes.status === 'fulfilled') setSystemLogs(logsRes.value?.logs || []);
+      if (tgRes.status === 'fulfilled') setTelegramStats(tgRes.value);
     } catch (err) {
       console.error('Admin fetch error:', err);
     }
@@ -224,6 +238,52 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleTelegramTest = async () => {
+    if (!tgTestChatId.trim() || !tgTestMsg.trim()) return;
+    setTgSending(true);
+    setTgFeedback('');
+    try {
+      const res = await fetch(`${API_URL}/admin/telegram/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ chat_id: tgTestChatId.trim(), message: tgTestMsg.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed to send test message');
+      setTgFeedback(`✅ Test message sent to ${data.chat_id}`);
+      setTgTestMsg('');
+    } catch (err) {
+      setTgFeedback(`❌ ${err.message}`);
+    } finally {
+      setTgSending(false);
+    }
+  };
+
+  const handleTelegramBroadcast = async () => {
+    if (!tgBroadcastMsg.trim() && !tgBroadcastAlertId) return;
+    setTgSending(true);
+    setTgFeedback('');
+    try {
+      const res = await fetch(`${API_URL}/admin/telegram/broadcast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          message: tgBroadcastMsg.trim(),
+          alert_id: tgBroadcastAlertId || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Broadcast failed');
+      setTgFeedback(`✅ Broadcast sent to ${data.sent}/${data.total} Telegram users`);
+      setTgBroadcastMsg('');
+      setTgBroadcastAlertId('');
+    } catch (err) {
+      setTgFeedback(`❌ ${err.message}`);
+    } finally {
+      setTgSending(false);
+    }
+  };
+
   const activeAlerts = Array.isArray(alerts) ? alerts.filter(a => a.is_active && !a.retracted) : [];
 
   return (
@@ -236,7 +296,7 @@ const AdminDashboard = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full max-w-2xl grid-cols-5">
+        <TabsList className="grid w-full max-w-4xl grid-cols-6">
           <TabsTrigger value="overview" className="gap-2">
             <Server className="w-4 h-4" />
             {t('admin.overview')}
@@ -248,6 +308,10 @@ const AdminDashboard = () => {
           <TabsTrigger value="sms" className="gap-2">
             <Phone className="w-4 h-4" />
             {t('admin.sms')}
+          </TabsTrigger>
+          <TabsTrigger value="telegram" className="gap-2">
+            <Bot className="w-4 h-4" />
+            Telegram
           </TabsTrigger>
           <TabsTrigger value="reports" className="gap-2">
             <FileWarning className="w-4 h-4" />
@@ -540,6 +604,169 @@ const AdminDashboard = () => {
 
         <TabsContent value="users">
           <UserManagement />
+        </TabsContent>
+
+        {/* ═══════ TELEGRAM TAB ═══════ */}
+        <TabsContent value="telegram" className="space-y-6">
+          {/* Stats row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className={`p-3 rounded-full ${telegramStats?.enabled ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                  <Bot className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Bot Status</p>
+                  <h4 className="text-xl font-bold">{telegramStats?.enabled ? 'Active' : 'Inactive'}</h4>
+                  {telegramStats?.bot_username && (
+                    <p className="text-xs text-muted-foreground">@{telegramStats.bot_username}</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3 rounded-full bg-green-100 text-green-600">
+                  <Users className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Linked Users</p>
+                  <h4 className="text-xl font-bold">{telegramStats?.linked_users ?? 0}</h4>
+                  <p className="text-xs text-muted-foreground">{telegramStats?.percentage ?? 0}% of total users</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3 rounded-full bg-purple-100 text-purple-600">
+                  <Radio className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Users</p>
+                  <h4 className="text-xl font-bold">{telegramStats?.total_users ?? 0}</h4>
+                  <p className="text-xs text-muted-foreground">registered accounts</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {tgFeedback && (
+            <Alert className={tgFeedback.startsWith('✅') ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}>
+              <AlertDescription className={tgFeedback.startsWith('✅') ? 'text-green-800' : 'text-red-800'}>{tgFeedback}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Test Message */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Send className="w-5 h-5" /> Send Test Message
+                </CardTitle>
+                <CardDescription>
+                  Send a direct message to a specific Telegram chat ID. Get your chat ID by messaging @userinfobot on Telegram.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Telegram Chat ID</label>
+                  <Input
+                    placeholder="e.g. 123456789"
+                    value={tgTestChatId}
+                    onChange={e => setTgTestChatId(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Message</label>
+                  <textarea
+                    className="w-full border rounded-md p-2 text-sm min-h-[80px] resize-y bg-background"
+                    placeholder="Type your test message here..."
+                    value={tgTestMsg}
+                    onChange={e => setTgTestMsg(e.target.value)}
+                  />
+                </div>
+                <Button
+                  onClick={handleTelegramTest}
+                  disabled={tgSending || !tgTestChatId.trim() || !tgTestMsg.trim()}
+                  className="w-full gap-2"
+                >
+                  <Send className="w-4 h-4" />
+                  {tgSending ? 'Sending...' : 'Send Test Message'}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  ℹ️ Users must link their Telegram by messaging @{telegramStats?.bot_username || 'SurakshaSetuBot'} first.
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Broadcast */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Radio className="w-5 h-5" /> Broadcast to All Users
+                </CardTitle>
+                <CardDescription>
+                  Send an alert or custom message to all {telegramStats?.linked_users ?? 0} Telegram-linked users at once.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Broadcast as Alert (optional)</label>
+                  <select
+                    className="w-full border rounded-md p-2 text-sm bg-background"
+                    value={tgBroadcastAlertId}
+                    onChange={e => setTgBroadcastAlertId(e.target.value)}
+                  >
+                    <option value="">— Custom message (no alert) —</option>
+                    {alerts.filter(a => a.is_active).map(a => (
+                      <option key={a.id} value={a.id}>
+                        [{a.severity?.toUpperCase()}] {a.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {!tgBroadcastAlertId && (
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Custom Message</label>
+                    <textarea
+                      className="w-full border rounded-md p-2 text-sm min-h-[80px] resize-y bg-background"
+                      placeholder="Type your broadcast message..."
+                      value={tgBroadcastMsg}
+                      onChange={e => setTgBroadcastMsg(e.target.value)}
+                    />
+                  </div>
+                )}
+                <Button
+                  onClick={handleTelegramBroadcast}
+                  disabled={tgSending || (!tgBroadcastMsg.trim() && !tgBroadcastAlertId)}
+                  className="w-full gap-2"
+                  variant={tgBroadcastAlertId ? 'destructive' : 'default'}
+                >
+                  <Radio className="w-4 h-4" />
+                  {tgSending ? 'Broadcasting...' : `Broadcast to ${telegramStats?.linked_users ?? 0} Users`}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* How to link Telegram */}
+          <Card>
+            <CardHeader>
+              <CardTitle>How Users Link Their Telegram</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+                <li>User goes to their Profile page → click <strong>"Link Telegram"</strong></li>
+                <li>They get a unique link code (8-char, 10-min expiry)</li>
+                <li>They open Telegram, message <strong>@{telegramStats?.bot_username || 'SurakshaSetuBot'}</strong> with: <code className="bg-muted px-1 rounded">/start &lt;CODE&gt;</code></li>
+                <li>Bot confirms linking, user receives alerts automatically based on location & radius</li>
+              </ol>
+              <div className="mt-4 p-3 bg-muted rounded-lg text-xs">
+                <strong>Bot webhook URL (set once via BotFather):</strong><br />
+                <code>{API_URL}/api/telegram/webhook</code>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ═══════ ALERT SAFETY TAB ═══════ */}
