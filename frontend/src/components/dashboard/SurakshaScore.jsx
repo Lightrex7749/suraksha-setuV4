@@ -93,10 +93,10 @@ const SurakshaScore = ({ score: initialScore = 85 }) => {
   }
 
   const breakdownData = breakdown ? [
-    { name: 'Location Risk', value: breakdown.location_risk, icon: MapPin },
-    { name: 'Weather Risk', value: breakdown.weather_risk, icon: CloudRain },
-    { name: 'Disaster Proximity', value: breakdown.disaster_proximity, icon: AlertTriangle },
-    { name: 'Infrastructure', value: breakdown.infrastructure, icon: TrendingUp },
+    { name: t('safety.locationRisk'), value: breakdown.location_risk, icon: MapPin },
+    { name: t('safety.weatherRisk'), value: breakdown.weather_risk, icon: CloudRain },
+    { name: t('safety.disasterProximity'), value: breakdown.disaster_proximity, icon: AlertTriangle },
+    { name: t('safety.infrastructure'), value: breakdown.infrastructure, icon: TrendingUp },
   ] : [];
 
   return (

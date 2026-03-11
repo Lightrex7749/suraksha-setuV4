@@ -160,14 +160,17 @@ const MainLayout = () => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
+  // Prefer custom/DiceBear avatar saved in localStorage over Firebase photoURL
+  const displayAvatar = localStorage.getItem('user_avatar_url') || user?.photoURL || null;
+
   const getUserTypeLabel = (type) => {
     const labels = {
-      student: 'Student',
-      scientist: 'Scientist',
-      admin: 'Administrator',
-      citizen: 'Citizen'
+      student: t('role.student'),
+      scientist: t('role.scientist'),
+      admin: t('role.admin'),
+      citizen: t('role.citizen')
     };
-    return labels[type] || 'User';
+    return labels[type] || t('role.user');
   };
 
   // Base navigation items for all users (citizen)
@@ -180,13 +183,14 @@ const MainLayout = () => {
     { icon: BarChart3, label: t('nav.analytics'), path: '/app/analytics' },
     { icon: Users, label: t('nav.community'), path: '/app/community' },
     { icon: Phone, label: t('nav.contacts'), path: '/app/critical-contacts' },
+    { icon: UserCircle, label: t('nav.myProfile'), path: '/app/profile' },
   ];
 
   // Role-specific navigation items
   const roleNavItems = {
-    student: { icon: GraduationCap, label: 'Student Portal', path: '/app/student' },
-    scientist: { icon: Microscope, label: 'Scientist Portal', path: '/app/scientist' },
-    admin: { icon: ShieldAlert, label: 'Admin Dashboard', path: '/app/admin' },
+    student: { icon: GraduationCap, label: t('nav.studentPortal'), path: '/app/student' },
+    scientist: { icon: Microscope, label: t('nav.scientistPortal'), path: '/app/scientist' },
+    admin: { icon: ShieldAlert, label: t('nav.adminDashboard'), path: '/app/admin' },
   };
 
   // Build navigation items based on user role
@@ -266,28 +270,38 @@ const MainLayout = () => {
 
         <div className="p-4 border-t border-border">
           {!collapsed ? (
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
-                <Avatar className="h-9 w-9 border border-border">
-                  <AvatarFallback>{user ? getInitials(user.name) : 'U'}</AvatarFallback>
-                </Avatar>
-                <div className="flex flex-col flex-1 min-w-0">
-                  <span className="text-sm font-medium truncate">{user?.name || 'User'}</span>
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground">{user ? getUserTypeLabel(user.user_type) : 'Citizen'}</span>
-                    {user?.role && (
-                      <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
-                        {user.role}
-                      </Badge>
-                    )}
-                  </div>
+            <button
+              onClick={() => navigate('/app/profile')}
+              className="w-full flex items-center gap-3 rounded-lg p-2 hover:bg-muted transition-colors text-left"
+            >
+              <Avatar className="h-9 w-9 border border-border shrink-0">
+                <AvatarImage src={displayAvatar} alt={user?.name} referrerPolicy="no-referrer" />
+                <AvatarFallback>{user ? getInitials(user.name) : 'U'}</AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col flex-1 min-w-0">
+                <span className="text-sm font-medium truncate">{user?.name || 'User'}</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground">{user ? getUserTypeLabel(user.user_type) : 'Citizen'}</span>
+                  {user?.role && (
+                    <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                      {user.role}
+                    </Badge>
+                  )}
                 </div>
               </div>
-            </div>
+              <UserCircle className="h-4 w-4 text-muted-foreground shrink-0" />
+            </button>
           ) : (
-            <div className="text-center text-xs text-muted-foreground">
-              {user?.name?.charAt(0) || 'U'}
-            </div>
+            <button
+              onClick={() => navigate('/app/profile')}
+              className="w-full flex justify-center p-1 rounded-lg hover:bg-muted transition-colors"
+              title="My Profile"
+            >
+              <Avatar className="h-8 w-8 border border-border">
+                <AvatarImage src={displayAvatar} alt={user?.name} referrerPolicy="no-referrer" />
+                <AvatarFallback className="text-xs">{user?.name?.charAt(0) || 'U'}</AvatarFallback>
+              </Avatar>
+            </button>
           )}
         </div>
       </aside>
@@ -487,7 +501,7 @@ const MainLayout = () => {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative">
                   <Avatar className="h-8 w-8 border-2 border-primary/20">
-                    <AvatarImage src={user?.photoURL} alt={user?.name} />
+                    <AvatarImage src={displayAvatar} alt={user?.name} referrerPolicy="no-referrer" />
                     <AvatarFallback className="bg-primary/10 text-primary font-semibold">
                       {user ? getInitials(user.name) : 'U'}
                     </AvatarFallback>
@@ -502,9 +516,9 @@ const MainLayout = () => {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('/app/profile')} className="cursor-pointer">
                   <UserCircle className="mr-2 h-4 w-4" />
-                  <span>Profile</span>
+                  <span>My Profile</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem>
                   <Badge variant="outline" className="mr-2 text-xs">

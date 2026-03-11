@@ -12,10 +12,12 @@ import { SkeletonCard, SkeletonDashboard } from '@/components/ui/skeleton-loader
 import { Button } from "@/components/ui/button";
 import { Download, Share2, RefreshCw, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 
 const API_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000') + '/api';
 
 const Dashboard = () => {
+  const { t } = useTranslation();
   const [recommendations, setRecommendations] = useState([]);
   const [score, setScore] = useState(82);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -67,11 +69,11 @@ const Dashboard = () => {
       >
         <div className="space-y-2">
           <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-            Command Center
+            {t('dashboard.commandCenter')}
           </h1>
           <p className="text-muted-foreground flex items-center gap-2 text-sm">
             <TrendingUp className="w-4 h-4" />
-            Live disaster management & safety monitoring dashboard
+            {t('dashboard.commandSubtitle')}
           </p>
         </div>
         <div className="flex gap-2">
@@ -83,15 +85,15 @@ const Dashboard = () => {
             className="hover:scale-105 transition-transform shadow-sm border-2"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-            Refresh
+            {t('dashboard.refresh')}
           </Button>
           <Button variant="outline" size="sm" className="hover:scale-105 transition-transform shadow-sm border-2">
             <Share2 className="w-4 h-4 mr-2" />
-            Share
+            {t('dashboard.share')}
           </Button>
           <Button size="sm" className="hover:scale-105 transition-transform shadow-md bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-700 hover:via-purple-700 hover:to-pink-700">
             <Download className="w-4 h-4 mr-2" />
-            Export
+            {t('dashboard.export')}
           </Button>
         </div>
       </motion.div>
