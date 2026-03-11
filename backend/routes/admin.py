@@ -4,10 +4,11 @@ Admin API Routes for Alert Management, Users & Stats
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db, Alert, IncidentLog, User, CommunityReport, CommunityPost, AILog
+from database import get_db, Alert, IncidentLog, User, CommunityReport, CommunityPost, AILog, UserReport
 from notifications import ws_manager
 from sqlalchemy import select, func
 import logging
+import uuid
 from datetime import datetime, timezone, timedelta
 from firebase_auth import verify_firebase_token
 
@@ -34,6 +35,34 @@ class UserUpdateRequest(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
     status: Optional[str] = None
+
+
+class UserCreateRequest(BaseModel):
+    name: str
+    email: str
+    role: str = "citizen"
+    status: str = "active"
+
+
+class AlertCreateRequest(BaseModel):
+    alert_type: str
+    severity: str
+    title: str
+    description: str
+    source: str = "admin"
+    location: dict
+    is_active: bool = True
+
+
+class AlertUpdateRequest(BaseModel):
+    alert_type: Optional[str] = None
+    severity: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    source: Optional[str] = None
+    location: Optional[dict] = None
+    is_active: Optional[bool] = None
+    retracted: Optional[bool] = None
 
 
 # ==================== ADMIN STATS ENDPOINT ====================
@@ -172,6 +201,118 @@ async def update_user(user_id: str, body: UserUpdateRequest, db=Depends(get_db),
         user.user_type = body.role
     if body.status is not None:
         user.is_active = body.status == "active"
+    await db.commit()
+    return {"success": True}
+
+
+@router.post("/users")
+async def create_user(body: UserCreateRequest, db=Depends(get_db), _admin=Depends(verify_firebase_token)):
+    """Create a user from admin dashboard."""
+    email = body.email.strip().lower()
+    existing = await db.execute(select(User).where(User.email == email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Email already exists")
+
+    user_id = str(uuid.uuid4())
+    username_base = email.split("@")[0] if "@" in email else body.name.strip().lower().replace(" ", "")
+    username = username_base[:30] or f"user_{user_id[:6]}"
+    dupe_username = await db.execute(select(User).where(User.username == username))
+    if dupe_username.scalar_one_or_none():
+        username = f"{username}_{user_id[:6]}"
+
+    role = body.role if body.role in ("citizen", "student", "scientist", "admin", "developer") else "citizen"
+    user = User(
+        id=user_id,
+        email=email,
+        username=username,
+        password_hash="admin_created",
+        full_name=body.name.strip() or username,
+        user_type=role,
+        is_active=(body.status == "active"),
+    )
+    db.add(user)
+    await db.commit()
+    return {"success": True, "user_id": user.id}
+
+
+@router.get("/alerts")
+async def list_alerts(limit: int = 200, db=Depends(get_db)):
+    """List alerts for admin CRUD panel."""
+    result = await db.execute(select(Alert).order_by(Alert.created_at.desc()).limit(limit))
+    alerts = result.scalars().all()
+    return {
+        "alerts": [
+            {
+                "id": a.id,
+                "alert_type": a.alert_type,
+                "severity": a.severity,
+                "title": a.title,
+                "description": a.description,
+                "location": a.location,
+                "source": a.source,
+                "is_active": a.is_active,
+                "retracted": a.retracted,
+                "created_at": a.created_at.isoformat() if a.created_at else "",
+            }
+            for a in alerts
+        ]
+    }
+
+
+@router.post("/alerts")
+async def create_alert(body: AlertCreateRequest, db=Depends(get_db), _admin=Depends(verify_firebase_token)):
+    """Create alert from admin dashboard."""
+    alert = Alert(
+        id=str(uuid.uuid4()),
+        alert_type=body.alert_type,
+        severity=body.severity,
+        title=body.title,
+        description=body.description,
+        location=body.location or {},
+        source=body.source or "admin",
+        is_active=body.is_active,
+        retracted=False,
+    )
+    db.add(alert)
+    await db.commit()
+    return {"success": True, "alert_id": alert.id}
+
+
+@router.put("/alerts/{alert_id}")
+async def update_alert(alert_id: str, body: AlertUpdateRequest, db=Depends(get_db), _admin=Depends(verify_firebase_token)):
+    """Update alert fields."""
+    alert = await db.get(Alert, alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    if body.alert_type is not None:
+        alert.alert_type = body.alert_type
+    if body.severity is not None:
+        alert.severity = body.severity
+    if body.title is not None:
+        alert.title = body.title
+    if body.description is not None:
+        alert.description = body.description
+    if body.source is not None:
+        alert.source = body.source
+    if body.location is not None:
+        alert.location = body.location
+    if body.is_active is not None:
+        alert.is_active = body.is_active
+    if body.retracted is not None:
+        alert.retracted = body.retracted
+
+    await db.commit()
+    return {"success": True}
+
+
+@router.delete("/alerts/{alert_id}")
+async def delete_alert(alert_id: str, db=Depends(get_db), _admin=Depends(verify_firebase_token)):
+    """Delete alert from admin dashboard."""
+    alert = await db.get(Alert, alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    await db.delete(alert)
     await db.commit()
     return {"success": True}
 
@@ -379,3 +520,56 @@ async def get_pending_alerts(db = Depends(get_db)):
             for a in alerts
         ]
     }
+
+
+# ==================== COMMUNITY REPORTS ====================
+
+@router.get("/reports")
+async def get_community_reports(status: str = "pending", limit: int = 50, db=Depends(get_db)):
+    """List user-submitted community reports for admin moderation."""
+    try:
+        query = select(UserReport).order_by(UserReport.created_at.desc()).limit(limit)
+        if status != "all":
+            query = query.where(UserReport.status == status)
+        result = await db.execute(query)
+        reports = result.scalars().all()
+        return {
+            "total": len(reports),
+            "reports": [
+                {
+                    "id": r.id,
+                    "reporter_id": r.reporter_id,
+                    "reporter_name": r.reporter_name,
+                    "reported_user_id": r.reported_user_id,
+                    "reported_user_name": r.reported_user_name,
+                    "post_id": r.post_id,
+                    "reason": r.reason,
+                    "description": r.description,
+                    "status": r.status,
+                    "created_at": r.created_at.isoformat() if r.created_at else "",
+                }
+                for r in reports
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Reports fetch error: {e}")
+        return {"total": 0, "reports": []}
+
+
+class ReportActionRequest(BaseModel):
+    status: str  # 'reviewed' | 'resolved' | 'dismissed'
+    admin_note: Optional[str] = None
+
+
+@router.put("/reports/{report_id}")
+async def update_report_status(report_id: str, body: ReportActionRequest, db=Depends(get_db)):
+    """Update the status of a community report (dismiss / resolve)."""
+    valid = {"reviewed", "resolved", "dismissed"}
+    if body.status not in valid:
+        raise HTTPException(status_code=400, detail=f"Status must be one of {valid}")
+    report = await db.get(UserReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    report.status = body.status
+    await db.commit()
+    return {"success": True, "report_id": report_id, "status": body.status}
