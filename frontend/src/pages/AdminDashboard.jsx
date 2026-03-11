@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+
 import { 
   ShieldCheck, 
   Users, 
@@ -30,10 +31,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import UserManagement from "@/components/admin/UserManagement";
+import { useTranslation } from 'react-i18next';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
 const AdminDashboard = () => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('overview');
   const [alerts, setAlerts] = useState([]);
   const [pendingAlerts, setPendingAlerts] = useState([]);
@@ -46,6 +49,8 @@ const AdminDashboard = () => {
   const [actionFeedback, setActionFeedback] = useState('');
   const [stats, setStats] = useState(null);
   const [systemLogs, setSystemLogs] = useState([]);
+  const [reports, setReports] = useState([]);
+  const [reportFilter, setReportFilter] = useState('pending');
 
   const fetchData = useCallback(async () => {
     try {
@@ -72,7 +77,36 @@ const AdminDashboard = () => {
     }
   }, []);
 
+  const fetchReports = useCallback(async (status = reportFilter) => {
+    try {
+      const res = await fetch(`${API_URL}/admin/reports?status=${status}&limit=50`);
+      const data = await res.json();
+      setReports(data?.reports || []);
+    } catch (err) {
+      console.error('Reports fetch error:', err);
+    }
+  }, [reportFilter]);
+
   useEffect(() => { fetchData(); }, [fetchData]);
+  // Fetch reports when tab or filter changes
+  useEffect(() => { if (activeTab === 'reports') fetchReports(); }, [activeTab, fetchReports]);
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => { fetchData(); if (activeTab === 'reports') fetchReports(); }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchData, fetchReports, activeTab]);
+
+  const handleReportAction = async (reportId, status) => {
+    try {
+      await fetch(`${API_URL}/admin/reports/${reportId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      setActionFeedback(`Report marked as ${status}`);
+      fetchReports();
+    } catch (err) { setActionFeedback(`Error: ${err.message}`); }
+  };
 
   const handleRetract = async (alertId) => {
     if (!retractReason.trim()) { setActionFeedback('Please provide a retraction reason'); return; }
@@ -121,28 +155,37 @@ const AdminDashboard = () => {
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">System Administration</h1>
-          <p className="text-muted-foreground">Manage users, approve alerts, and monitor system health.</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('admin.systemAdministration')}</h1>
+          <p className="text-muted-foreground">{t('admin.manageSystem')}</p>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full max-w-2xl grid-cols-4">
+        <TabsList className="grid w-full max-w-2xl grid-cols-5">
           <TabsTrigger value="overview" className="gap-2">
             <Server className="w-4 h-4" />
-            Overview
+            {t('admin.overview')}
           </TabsTrigger>
           <TabsTrigger value="safety" className="gap-2">
             <Shield className="w-4 h-4" />
-            Alert Safety
+            {t('admin.alertSafety')}
           </TabsTrigger>
           <TabsTrigger value="sms" className="gap-2">
             <Phone className="w-4 h-4" />
-            SMS
+            {t('admin.sms')}
+          </TabsTrigger>
+          <TabsTrigger value="reports" className="gap-2">
+            <FileWarning className="w-4 h-4" />
+            {t('admin.reports')}
+            {stats?.pending_reports > 0 && (
+              <span className="ml-1 bg-destructive text-destructive-foreground text-xs rounded-full px-1.5 py-0.5 font-bold">
+                {stats.pending_reports}
+              </span>
+            )}
           </TabsTrigger>
           <TabsTrigger value="users" className="gap-2">
             <Users className="w-4 h-4" />
-            Users
+            {t('admin.users')}
           </TabsTrigger>
         </TabsList>
 
@@ -324,6 +367,100 @@ const AdminDashboard = () => {
           </CardContent>
         </Card>
       </div>
+        </TabsContent>
+
+        {/* ═══════ COMMUNITY REPORTS TAB ═══════ */}
+        <TabsContent value="reports" className="space-y-6">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h2 className="text-xl font-semibold">Community Reports</h2>
+              <p className="text-sm text-muted-foreground">User-submitted reports about harmful posts or behavior.</p>
+            </div>
+            <div className="flex gap-2">
+              {['pending', 'reviewed', 'resolved', 'all'].map(f => (
+                <button
+                  key={f}
+                  onClick={() => { setReportFilter(f); fetchReports(f); }}
+                  className={`px-3 py-1.5 rounded text-sm font-medium transition-colors capitalize ${reportFilter === f ? 'bg-primary text-primary-foreground' : 'border hover:bg-muted'}`}
+                >
+                  {f}
+                </button>
+              ))}
+              <Button size="sm" variant="outline" onClick={() => fetchReports()} className="gap-1">
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh
+              </Button>
+            </div>
+          </div>
+          {actionFeedback && (
+            <Alert className="border-blue-200 bg-blue-50">
+              <AlertDescription className="text-blue-800">{actionFeedback}</AlertDescription>
+            </Alert>
+          )}
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Reporter</TableHead>
+                    <TableHead>Reported User</TableHead>
+                    <TableHead>Reason</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reports.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        No reports found{reportFilter !== 'all' ? ` with status "${reportFilter}"` : ''}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {reports.map(report => (
+                    <TableRow key={report.id}>
+                      <TableCell className="text-sm font-medium">{report.reporter_name}</TableCell>
+                      <TableCell className="text-sm">{report.reported_user_name}</TableCell>
+                      <TableCell>
+                        <Badge variant={report.reason === 'harassment' || report.reason === 'false_emergency' ? 'destructive' : 'outline'} className="capitalize">
+                          {report.reason.replace('_', ' ')}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{report.description || '—'}</TableCell>
+                      <TableCell>
+                        <Badge variant={report.status === 'pending' ? 'destructive' : report.status === 'resolved' ? 'default' : 'secondary'} className="capitalize">
+                          {report.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {report.created_at ? new Date(report.created_at).toLocaleDateString() : '—'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          {report.status === 'pending' && (
+                            <>
+                              <Button size="sm" variant="outline" onClick={() => handleReportAction(report.id, 'reviewed')} className="h-7 text-xs">
+                                Review
+                              </Button>
+                              <Button size="sm" variant="destructive" onClick={() => handleReportAction(report.id, 'resolved')} className="h-7 text-xs">
+                                Resolve
+                              </Button>
+                            </>
+                          )}
+                          {report.status !== 'pending' && (
+                            <Button size="sm" variant="ghost" onClick={() => handleReportAction(report.id, 'resolved')} className="h-7 text-xs text-muted-foreground">
+                              Close
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="users">

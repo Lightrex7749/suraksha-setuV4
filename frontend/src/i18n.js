@@ -36,6 +36,15 @@ const baseTranslation = {
   'dashboard.export': 'Export',
   'dashboard.share': 'Share',
 
+  // Admin
+  'admin.systemAdministration': 'System Administration',
+  'admin.manageSystem': 'Manage users, approve alerts, and monitor system health.',
+  'admin.overview': 'Overview',
+  'admin.alertSafety': 'Alert Safety',
+  'admin.sms': 'SMS',
+  'admin.reports': 'Reports',
+  'admin.users': 'Users',
+
   // Safety score breakdown
   'safety.locationRisk': 'Location Risk',
   'safety.weatherRisk': 'Weather Risk',
