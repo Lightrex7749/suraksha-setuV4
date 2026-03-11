@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   Users, Search, Filter, Edit2, Trash2, Shield,
   UserCheck, UserX, Crown, GraduationCap, Microscope,
-  MoreVertical, Loader2, Plus, CheckCircle2, XCircle
+  MoreVertical, Loader2, Plus, CheckCircle2, XCircle, RefreshCw
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -107,9 +107,16 @@ const UserManagement = () => {
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', email: '', role: '', status: '' });
+  const [createForm, setCreateForm] = useState({ name: '', email: '', role: 'citizen', status: 'active' });
+
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('auth_token') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   useEffect(() => {
     fetchUsers();
@@ -124,7 +131,7 @@ const UserManagement = () => {
       setLoading(true);
       // Try to fetch from backend, fallback to sample data
       try {
-        const response = await axios.get(`${API_URL}/admin/users`);
+        const response = await axios.get(`${API_URL}/admin/users`, { headers: getAuthHeaders() });
         setUsers(response.data.users || []);
       } catch (error) {
         console.log('Using sample data for users');
@@ -145,9 +152,9 @@ const UserManagement = () => {
     // Search filter
     if (searchQuery) {
       filtered = filtered.filter(user =>
-        user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        user.location?.toLowerCase().includes(searchQuery.toLowerCase())
+        (user.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (user.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (user.location || '').toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
 
@@ -184,7 +191,7 @@ const UserManagement = () => {
     try {
       // Try backend update
       try {
-        await axios.put(`${API_URL}/admin/users/${selectedUser.id}`, editForm);
+        await axios.put(`${API_URL}/admin/users/${selectedUser.id}`, editForm, { headers: getAuthHeaders() });
       } catch (error) {
         console.log('Backend update not available, updating locally');
       }
@@ -209,7 +216,7 @@ const UserManagement = () => {
     try {
       // Try backend delete
       try {
-        await axios.delete(`${API_URL}/admin/users/${selectedUser.id}`);  
+        await axios.delete(`${API_URL}/admin/users/${selectedUser.id}`, { headers: getAuthHeaders() });
       } catch (error) {
         console.log('Backend delete not available, deleting locally');
       }
@@ -223,6 +230,19 @@ const UserManagement = () => {
     } catch (error) {
       console.error('Error deleting user:', error);
       toast.error('Failed to delete user');
+    }
+  };
+
+  const confirmCreate = async () => {
+    try {
+      await axios.post(`${API_URL}/admin/users`, createForm, { headers: getAuthHeaders() });
+      toast.success('User created successfully');
+      setCreateDialogOpen(false);
+      setCreateForm({ name: '', email: '', role: 'citizen', status: 'active' });
+      await fetchUsers();
+    } catch (error) {
+      console.error('Error creating user:', error);
+      toast.error(error?.response?.data?.detail || 'Failed to create user');
     }
   };
 
@@ -334,6 +354,14 @@ const UserManagement = () => {
               <CardDescription>
                 Manage user accounts, roles, and permissions
               </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={fetchUsers} className="gap-2">
+                <RefreshCw className="w-4 h-4" /> Refresh
+              </Button>
+              <Button size="sm" onClick={() => setCreateDialogOpen(true)} className="gap-2">
+                <Plus className="w-4 h-4" /> Add User
+              </Button>
             </div>
           </div>
 
@@ -461,6 +489,52 @@ const UserManagement = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit User Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create User</DialogTitle>
+            <DialogDescription>Add a new user account from admin dashboard.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="create-name">Name</Label>
+              <Input id="create-name" value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-email">Email</Label>
+              <Input id="create-email" type="email" value={createForm.email} onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-role">Role</Label>
+              <Select value={createForm.role} onValueChange={(value) => setCreateForm({ ...createForm, role: value })}>
+                <SelectTrigger id="create-role"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="citizen">Citizen</SelectItem>
+                  <SelectItem value="student">Student</SelectItem>
+                  <SelectItem value="scientist">Scientist</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-status">Status</Label>
+              <Select value={createForm.status} onValueChange={(value) => setCreateForm({ ...createForm, status: value })}>
+                <SelectTrigger id="create-status"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+            <Button onClick={confirmCreate} disabled={!createForm.name || !createForm.email}>Create User</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit User Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>

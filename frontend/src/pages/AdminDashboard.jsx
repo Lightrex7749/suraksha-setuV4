@@ -51,11 +51,25 @@ const AdminDashboard = () => {
   const [systemLogs, setSystemLogs] = useState([]);
   const [reports, setReports] = useState([]);
   const [reportFilter, setReportFilter] = useState('pending');
+  const [alertForm, setAlertForm] = useState({
+    title: '',
+    alert_type: 'weather',
+    severity: 'warning',
+    city: '',
+    lat: '',
+    lon: '',
+    description: '',
+  });
+
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('auth_token') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   const fetchData = useCallback(async () => {
     try {
       const [alertsRes, pendingRes, safetyRes, smsRes, incidentRes, smsLogRes, statsRes, logsRes] = await Promise.allSettled([
-        fetch(`${API_URL}/api/alerts`).then(r => r.json()),
+        fetch(`${API_URL}/admin/alerts`).then(r => r.json()),
         fetch(`${API_URL}/admin/alerts/pending`).then(r => r.json()),
         fetch(`${API_URL}/admin/safety/status`).then(r => r.json()),
         fetch(`${API_URL}/api/sms/status`).then(r => r.json()),
@@ -100,7 +114,7 @@ const AdminDashboard = () => {
     try {
       await fetch(`${API_URL}/admin/reports/${reportId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ status }),
       });
       setActionFeedback(`Report marked as ${status}`);
@@ -113,7 +127,7 @@ const AdminDashboard = () => {
     try {
       const res = await fetch(`${API_URL}/admin/alerts/retract`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ alert_id: alertId, reason: retractReason, admin_user_id: 'admin' }),
       });
       const data = await res.json();
@@ -132,7 +146,7 @@ const AdminDashboard = () => {
     try {
       const res = await fetch(`${API_URL}/admin/alerts/approve`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ alert_id: alertId, approved, admin_user_id: 'admin' }),
       });
       const data = await res.json();
@@ -143,10 +157,71 @@ const AdminDashboard = () => {
 
   const handleResetFP = async (eventType) => {
     try {
-      await fetch(`${API_URL}/admin/safety/reset/${eventType}`, { method: 'POST' });
+      await fetch(`${API_URL}/admin/safety/reset/${eventType}`, { method: 'POST', headers: getAuthHeaders() });
       setActionFeedback(`False positives reset for ${eventType}`);
       fetchData();
     } catch (err) { setActionFeedback(`Error: ${err.message}`); }
+  };
+
+  const handleCreateAlert = async () => {
+    try {
+      const payload = {
+        alert_type: alertForm.alert_type,
+        severity: alertForm.severity,
+        title: alertForm.title,
+        description: alertForm.description,
+        source: 'admin',
+        is_active: true,
+        location: {
+          city: alertForm.city || 'Unknown',
+          lat: alertForm.lat ? Number(alertForm.lat) : null,
+          lon: alertForm.lon ? Number(alertForm.lon) : null,
+        },
+      };
+      const res = await fetch(`${API_URL}/admin/alerts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || data.error || 'Failed to create alert');
+      setActionFeedback('Alert created successfully');
+      setAlertForm({ title: '', alert_type: 'weather', severity: 'warning', city: '', lat: '', lon: '', description: '' });
+      fetchData();
+    } catch (err) {
+      setActionFeedback(`Error: ${err.message}`);
+    }
+  };
+
+  const handleToggleAlertActive = async (alert) => {
+    try {
+      const res = await fetch(`${API_URL}/admin/alerts/${alert.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ is_active: !alert.is_active }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || data.error || 'Update failed');
+      setActionFeedback(`Alert ${!alert.is_active ? 'activated' : 'deactivated'}`);
+      fetchData();
+    } catch (err) {
+      setActionFeedback(`Error: ${err.message}`);
+    }
+  };
+
+  const handleDeleteAlert = async (alertId) => {
+    try {
+      const res = await fetch(`${API_URL}/admin/alerts/${alertId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || data.error || 'Delete failed');
+      setActionFeedback('Alert deleted');
+      fetchData();
+    } catch (err) {
+      setActionFeedback(`Error: ${err.message}`);
+    }
   };
 
   const activeAlerts = Array.isArray(alerts) ? alerts.filter(a => a.is_active && !a.retracted) : [];
@@ -592,6 +667,60 @@ const AdminDashboard = () => {
                   ))}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+
+          {/* Alert CRUD Management */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Alert Data Management (CRUD)</CardTitle>
+              <CardDescription>Create, edit status, and remove alerts directly from admin dashboard.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <Input placeholder="Alert title" value={alertForm.title} onChange={(e) => setAlertForm((p) => ({ ...p, title: e.target.value }))} />
+                <Input placeholder="Type (weather/flood/aqi)" value={alertForm.alert_type} onChange={(e) => setAlertForm((p) => ({ ...p, alert_type: e.target.value }))} />
+                <Input placeholder="Severity (info/warning/critical)" value={alertForm.severity} onChange={(e) => setAlertForm((p) => ({ ...p, severity: e.target.value }))} />
+                <Input placeholder="City" value={alertForm.city} onChange={(e) => setAlertForm((p) => ({ ...p, city: e.target.value }))} />
+                <Input placeholder="Latitude" value={alertForm.lat} onChange={(e) => setAlertForm((p) => ({ ...p, lat: e.target.value }))} />
+                <Input placeholder="Longitude" value={alertForm.lon} onChange={(e) => setAlertForm((p) => ({ ...p, lon: e.target.value }))} />
+              </div>
+              <Input placeholder="Description" value={alertForm.description} onChange={(e) => setAlertForm((p) => ({ ...p, description: e.target.value }))} />
+              <Button onClick={handleCreateAlert} disabled={!alertForm.title || !alertForm.description}>Create Alert</Button>
+
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Title</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Severity</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {alerts.slice(0, 10).map((alert) => (
+                      <TableRow key={alert.id}>
+                        <TableCell className="font-medium max-w-[240px] truncate">{alert.title}</TableCell>
+                        <TableCell>{alert.alert_type}</TableCell>
+                        <TableCell><Badge variant={alert.severity === 'critical' ? 'destructive' : 'outline'}>{alert.severity}</Badge></TableCell>
+                        <TableCell>{alert.is_active ? 'Active' : 'Inactive'}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="outline" onClick={() => handleToggleAlertActive(alert)}>
+                              {alert.is_active ? 'Deactivate' : 'Activate'}
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => handleDeleteAlert(alert.id)}>
+                              Delete
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
 
