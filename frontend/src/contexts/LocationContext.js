@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import useWebSocket from '@/hooks/useWebSocket';
 
@@ -12,13 +12,19 @@ export const useLocation = () => {
   return context;
 };
 
+const BACKEND = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+
 export const LocationProvider = ({ children }) => {
   const [location, setLocation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [alerts, setAlerts] = useState([]);
 
-  // Stable unique client ID for this browser session
+  // gpsPincode  = auto-detected from GPS on app open (read-only)
+  // homePincode = user-set "home" pincode saved in profile
+  const [gpsPincode, setGpsPincode] = useState(() => localStorage.getItem('gps_pincode') || '');
+  const [homePincode, setHomePincode] = useState(() => localStorage.getItem('home_pincode') || '');
+
   const clientIdRef = useRef(
     sessionStorage.getItem('ws_client_id') || (() => {
       const id = `client_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -27,9 +33,10 @@ export const LocationProvider = ({ children }) => {
     })()
   );
 
-  // Initialize WebSocket for real-time alerts
-  const wsUrl = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000').replace('http://', 'ws://').replace('https://', 'wss://') + `/api/ws/${clientIdRef.current}`;
-  
+  const wsUrl =
+    BACKEND.replace('http://', 'ws://').replace('https://', 'wss://') +
+    `/api/ws/${clientIdRef.current}`;
+
   const {
     isConnected: wsConnected,
     lastMessage: wsMessage,
@@ -37,18 +44,12 @@ export const LocationProvider = ({ children }) => {
     requestAlerts: wsRequestAlerts,
   } = useWebSocket(wsUrl, {
     onMessage: (message) => {
-      // Handle incoming WebSocket messages
       if (message.type === 'new_alert') {
-        // Add new alert to alerts list
-        setAlerts((prevAlerts) => {
-          // Prevent duplicates
-          const exists = prevAlerts.some(alert => alert.id === message.id);
-          if (exists) return prevAlerts;
-          
-          return [message, ...prevAlerts];
+        setAlerts((prev) => {
+          if (prev.some((a) => a.id === message.id)) return prev;
+          return [message, ...prev];
         });
       } else if (message.type === 'alerts_list') {
-        // Update alerts list from server
         setAlerts(message.alerts || []);
       }
     },
@@ -57,27 +58,18 @@ export const LocationProvider = ({ children }) => {
     reconnectInterval: 3000,
   });
 
-  // Load saved location from localStorage
   useEffect(() => {
-    const savedLocation = localStorage.getItem('userLocation');
-    if (savedLocation) {
-      try {
-        setLocation(JSON.parse(savedLocation));
-      } catch (e) {
-        console.error('Failed to parse saved location:', e);
-      }
+    const saved = localStorage.getItem('userLocation');
+    if (saved) {
+      try { setLocation(JSON.parse(saved)); } catch {}
     }
     setLoading(false);
   }, []);
 
-  // Auto-detect location on mount if not set
   useEffect(() => {
-    if (!location) {
-      detectLocation();
-    }
-  }, []);
+    if (!location) detectLocation();
+  }, []); // eslint-disable-line
 
-  // Send location to WebSocket when it changes
   useEffect(() => {
     if (location && wsConnected) {
       wsSetLocation({
@@ -85,12 +77,11 @@ export const LocationProvider = ({ children }) => {
         longitude: location.longitude,
         city: location.city,
         state: location.state,
-        pin_code: location.pin_code,
+        pin_code: location.gps_pincode || gpsPincode || location.pin_code,
       });
     }
-  }, [location, wsConnected, wsSetLocation]);
+  }, [location, wsConnected, wsSetLocation, gpsPincode]);
 
-  // Fetch nearby alerts when location changes
   useEffect(() => {
     if (location?.latitude && location?.longitude) {
       fetchNearbyAlerts(location.latitude, location.longitude);
@@ -100,26 +91,19 @@ export const LocationProvider = ({ children }) => {
   const detectLocation = async () => {
     setLoading(true);
     setError(null);
-
     try {
-      // Try browser geolocation first
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
-          async (position) => {
-            const { latitude, longitude } = position.coords;
-            await updateLocationByCoords(latitude, longitude);
-          },
-          async (geoError) => {
-            console.warn('Geolocation failed, using IP detection:', geoError.message);
-            // Fallback to IP-based detection
+          async (pos) => { await updateLocationByCoords(pos.coords.latitude, pos.coords.longitude); },
+          async (geoErr) => {
+            console.warn('Geolocation failed, using IP detection:', geoErr.message);
             await detectLocationByIP();
           }
         );
       } else {
-        // No geolocation support, use IP detection
         await detectLocationByIP();
       }
-    } catch (err) {
+    } catch {
       setError('Failed to detect location');
       setLoading(false);
     }
@@ -127,139 +111,104 @@ export const LocationProvider = ({ children }) => {
 
   const detectLocationByIP = async () => {
     try {
-      const response = await axios.get(
-        `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/current`,
-        { timeout: 10000 }
-      );
-      const locationData = {
-        latitude: response.data.lat,
-        longitude: response.data.lon,
-        city: response.data.city,
-        state: response.data.region || response.data.country,
-        pin_code: response.data.zip || null,
-        method: 'ip',
+      const res = await axios.get(`${BACKEND}/api/location/current`, { timeout: 10000 });
+      const ld = {
+        latitude: res.data.lat, longitude: res.data.lon,
+        city: res.data.city, state: res.data.region || res.data.country,
+        pin_code: res.data.zip || null, method: 'ip',
       };
-      setLocation(locationData);
-      localStorage.setItem('userLocation', JSON.stringify(locationData));
+      setLocation(ld);
+      localStorage.setItem('userLocation', JSON.stringify(ld));
       setError(null);
-      setLoading(false);
     } catch (err) {
-      console.error('IP detection failed:', err);
-      const errorMessage = err.code === 'ECONNABORTED' 
-        ? 'Connection timeout. Please check your network.' 
-        : 'Unable to detect location automatically.';
-      setError(errorMessage);
-      setLoading(false);
-    }
+      setError(err.code === 'ECONNABORTED' ? 'Connection timeout.' : 'Unable to detect location automatically.');
+    } finally { setLoading(false); }
   };
 
   const updateLocationByCoords = async (latitude, longitude) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.post(
-        `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/update`,
+      const res = await axios.post(
+        `${BACKEND}/api/location/update`,
         { latitude, longitude, enable_alerts: true, alert_severity: ['warning', 'critical'] },
         { timeout: 10000 }
       );
-      
-      if (response.data.success) {
-        const locationData = {
-          ...response.data.location,
-          method: 'gps',
-        };
-        setLocation(locationData);
-        localStorage.setItem('userLocation', JSON.stringify(locationData));
+      if (res.data.success) {
+        const ld = { ...res.data.location, method: 'gps' };
+        setLocation(ld);
+        localStorage.setItem('userLocation', JSON.stringify(ld));
         setError(null);
+        // Reverse-geocode for pincode
+        try {
+          const rgRes = await axios.get(`${BACKEND}/api/location/reverse-geocode`, {
+            params: { lat: latitude, lon: longitude }, timeout: 8000,
+          });
+          if (rgRes.data.success && rgRes.data.pincode) {
+            const pc = rgRes.data.pincode;
+            setGpsPincode(pc);
+            localStorage.setItem('gps_pincode', pc);
+            setLocation((prev) => prev ? {
+              ...prev, gps_pincode: pc,
+              city: prev.city || rgRes.data.city,
+              state: prev.state || rgRes.data.state,
+            } : prev);
+          }
+        } catch (rgErr) { console.warn('Reverse geocode failed:', rgErr.message); }
       }
-      setLoading(false);
     } catch (err) {
-      console.error('Location update failed:', err);
-      const errorMessage = err.code === 'ECONNABORTED'
-        ? 'Connection timeout. Please try again.'
-        : 'Unable to update location. Please try using PIN code.';
-      setError(errorMessage);
-      setLoading(false);
-    }
+      setError(err.code === 'ECONNABORTED' ? 'Connection timeout.' : 'Unable to update location.');
+    } finally { setLoading(false); }
   };
 
   const updateLocationByPincode = async (pinCode) => {
     setLoading(true);
     setError(null);
-
     try {
-      // Validate PIN code format
-      if (!pinCode || !/^\d{6}$/.test(pinCode)) {
-        throw new Error('PIN code must be 6 digits');
-      }
-
-      // First validate the PIN code
-      const validateResponse = await axios.post(
-        `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/validate-pincode`,
-        { pin_code: pinCode },
+      if (!pinCode || !/^\d{6}$/.test(pinCode)) throw new Error('PIN code must be 6 digits');
+      const vRes = await axios.post(`${BACKEND}/api/location/validate-pincode`, { pin_code: pinCode }, { timeout: 10000 });
+      if (!vRes.data?.is_valid) throw new Error('Invalid PIN code');
+      const uRes = await axios.post(
+        `${BACKEND}/api/location/update`,
+        { pin_code: pinCode, enable_alerts: true, alert_severity: ['warning', 'critical'] },
         { timeout: 10000 }
       );
-
-      if (!validateResponse.data || !validateResponse.data.is_valid) {
-        throw new Error('Invalid PIN code');
-      }
-
-      // Update location with PIN code
-      const updateResponse = await axios.post(
-        `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/update`,
-        {
-          pin_code: pinCode,
-          enable_alerts: true,
-          alert_severity: ['warning', 'critical'],
-        },
-        { timeout: 10000 }
-      );
-
-      if (updateResponse.data.success) {
-        const locationData = {
-          ...updateResponse.data.location,
-          method: 'pincode',
-        };
-        setLocation(locationData);
-        localStorage.setItem('userLocation', JSON.stringify(locationData));
+      if (uRes.data.success) {
+        const ld = { ...uRes.data.location, method: 'pincode' };
+        setLocation(ld);
+        localStorage.setItem('userLocation', JSON.stringify(ld));
+        setHomePincode(pinCode);
+        localStorage.setItem('home_pincode', pinCode);
         setError(null);
         setLoading(false);
-        return { success: true, location: locationData };
+        return { success: true, location: ld };
       }
-
       setLoading(false);
       return { success: true };
     } catch (err) {
-      console.error('PIN code update error:', err);
-      let errorMessage = 'Unable to verify PIN code. Please try again.';
-      
-      if (err.code === 'ECONNABORTED') {
-        errorMessage = 'Request timeout. Please check your connection.';
-      } else if (err.response?.status === 400) {
-        errorMessage = err.response?.data?.detail || 'Invalid PIN code';
-      } else if (err.response?.status >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
-      
-      setError(errorMessage);
+      let msg = 'Unable to verify PIN code. Please try again.';
+      if (err.code === 'ECONNABORTED') msg = 'Request timeout.';
+      else if (err.response?.status === 400) msg = err.response?.data?.detail || 'Invalid PIN code';
+      else if (err.response?.status >= 500) msg = 'Server error. Please try again later.';
+      else if (err.message) msg = err.message;
+      setError(msg);
       setLoading(false);
-      return { success: false, error: errorMessage };
+      return { success: false, error: msg };
     }
+  };
+
+  const setHomePincodeAndSave = (pincode) => {
+    setHomePincode(pincode);
+    localStorage.setItem('home_pincode', pincode);
   };
 
   const fetchNearbyAlerts = async (latitude, longitude, radiusKm = 50) => {
     try {
-      const response = await axios.get(
-        `${process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'}/api/location/nearby-alerts`,
-        { params: { lat: latitude, lon: longitude, radius_km: radiusKm } }
-      );
-      setAlerts(response.data.alerts || []);
-    } catch (err) {
-      console.error('Failed to fetch nearby alerts:', err);
-      setAlerts([]);
-    }
+      const res = await axios.get(`${BACKEND}/api/location/nearby-alerts`, {
+        params: { lat: latitude, lon: longitude, radius_km: radiusKm },
+      });
+      setAlerts(res.data.alerts || []);
+    } catch { setAlerts([]); }
   };
 
   const clearLocation = () => {
@@ -271,24 +220,15 @@ export const LocationProvider = ({ children }) => {
   const refreshNearbyAlerts = () => {
     if (location?.latitude && location?.longitude) {
       fetchNearbyAlerts(location.latitude, location.longitude);
-      // Also request via WebSocket if connected
-      if (wsConnected) {
-        wsRequestAlerts();
-      }
+      if (wsConnected) wsRequestAlerts();
     }
   };
 
   const value = {
-    location,
-    loading,
-    error,
-    alerts,
-    wsConnected, // WebSocket connection status
-    detectLocation,
-    updateLocationByPincode,
-    updateLocationByCoords,
-    clearLocation,
-    refreshNearbyAlerts,
+    location, loading, error, alerts, wsConnected,
+    gpsPincode, homePincode, setHomePincodeAndSave,
+    detectLocation, updateLocationByPincode, updateLocationByCoords,
+    clearLocation, refreshNearbyAlerts,
   };
 
   return <LocationContext.Provider value={value}>{children}</LocationContext.Provider>;

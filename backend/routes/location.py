@@ -213,6 +213,46 @@ async def validate_pincode(data: PincodeRequest):
     }
 
 
+@location_router.get("/reverse-geocode")
+async def reverse_geocode(lat: float, lon: float):
+    """
+    Reverse-geocode GPS coordinates to pincode, city, state using Nominatim.
+    Used by the frontend on app load to detect the user's current pincode.
+    """
+    import httpx
+    try:
+        headers = {"User-Agent": "SurakshaSetuApp/1.0 (disaster-alert-platform)"}
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                "https://nominatim.openstreetmap.org/reverse",
+                params={"lat": lat, "lon": lon, "format": "json", "addressdetails": 1},
+                headers=headers,
+            )
+            data = resp.json()
+        addr = data.get("address", {})
+        pincode = addr.get("postcode", "")
+        city = (
+            addr.get("city")
+            or addr.get("town")
+            or addr.get("village")
+            or addr.get("county")
+            or ""
+        )
+        state = addr.get("state", "")
+        return {
+            "success": True,
+            "pincode": pincode,
+            "city": city,
+            "state": state,
+            "display_name": data.get("display_name", ""),
+            "lat": lat,
+            "lon": lon,
+        }
+    except Exception as exc:
+        logger.warning("Nominatim reverse-geocode failed: %s", exc)
+        return {"success": False, "pincode": "", "city": "", "state": ""}
+
+
 @location_router.get("/nearby-alerts")
 async def get_nearby_alerts(lat: float = 28.6139, lon: float = 77.209, radius_km: float = 100):
     """Get alerts near a location."""
