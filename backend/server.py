@@ -60,6 +60,14 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
+    # Restore push subscriptions from DB so they survive server restarts
+    try:
+        from database import AsyncSessionLocal
+        async with AsyncSessionLocal() as _db:
+            await push_manager.load_from_db(_db)
+    except Exception as _e:
+        logger.warning("Push subscription restore failed: %s", _e)
+
     await redis_client.connect()
     r = await redis_client.get_client()
     if r:
@@ -807,6 +815,71 @@ try:
     app.include_router(admin_routes_router)
 except ImportError:
     pass
+
+# Profile routes
+from routes.profile import profile_router
+app.include_router(profile_router)
+
+
+# ── Telegram Bot Webhook ──────────────────────────────────────────────────────
+
+@app.post("/api/telegram/webhook", include_in_schema=False)
+async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Telegram Bot webhook endpoint.
+    Receives updates from Telegram and handles /start <CODE> for account linking.
+    Register this URL with BotFather: POST https://api.telegram.org/bot<TOKEN>/setWebhook?url=<HOST>/api/telegram/webhook
+    """
+    try:
+        from telegram_service import telegram_service
+        from sqlalchemy import select
+        from database import User
+        import re
+
+        update = await request.json()
+        message = update.get("message", {})
+        text = (message.get("text") or "").strip()
+        chat = message.get("chat", {})
+        chat_id = str(chat.get("id", ""))
+        from_user = message.get("from", {})
+        tg_username = from_user.get("username", "")
+
+        # Handle /start <CODE> for account linking
+        m = re.match(r"^/start\s+([A-Za-z0-9]+)$", text)
+        if m and chat_id:
+            code = m.group(1)
+            # Find which user has this code: brute-force check all users who have
+            # a pending link code by matching via verify_link_code
+            result = await db.execute(select(User).where(User.is_active == True))
+            users = result.scalars().all()
+            matched_user = None
+            for u in users:
+                if telegram_service.verify_link_code(u.id, code):
+                    matched_user = u
+                    break
+
+            if matched_user:
+                matched_user.telegram_chat_id = chat_id
+                if tg_username:
+                    matched_user.telegram_username = tg_username
+                await db.commit()
+                await telegram_service.send_message(
+                    chat_id,
+                    "✅ <b>Suraksha Setu Connected!</b>\n\n"
+                    "You will now receive disaster alerts for your location.\n\n"
+                    "Stay safe! 🛡️",
+                )
+                logger.info(f"[Telegram] Linked chat_id={chat_id} to user={matched_user.id}")
+            else:
+                await telegram_service.send_message(
+                    chat_id,
+                    "❌ Invalid or expired link code.\n\n"
+                    "Please generate a new code from your Suraksha Setu profile.",
+                )
+    except Exception as exc:
+        logger.warning(f"[Telegram Webhook] Error: {exc}")
+    # Always return 200 to Telegram
+    return {"ok": True}
 
 
 

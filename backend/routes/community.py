@@ -13,6 +13,7 @@ import pathlib
 from datetime import datetime, timezone
 
 from database import get_db, CommunityPost, Comment, DirectMessage, Notification, UserReport
+from firebase_auth import verify_firebase_token, get_optional_user
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ class CreatePostRequest(BaseModel):
     user_id: Optional[str] = "anonymous"
     lat: Optional[float] = None
     lon: Optional[float] = None
+    pincode: Optional[str] = None
 
 
 class CreateCommentRequest(BaseModel):
@@ -75,6 +77,7 @@ def _post_to_dict(p: CommunityPost, comments: list = None) -> dict:
         "location": (p.location or {}).get("name", "India"),
         "lat": (p.location or {}).get("lat"),
         "lon": (p.location or {}).get("lon"),
+        "pincode": (p.location or {}).get("pincode"),
         "tags": p.tags or [],
         "media": p.media or [],
         "image_analysis": (p.location or {}).get("image_analysis"),
@@ -233,9 +236,15 @@ async def upload_community_image(
 
 
 @community_router.post("/posts")
-async def create_post(request: CreatePostRequest, db: AsyncSession = Depends(get_db)):
+async def create_post(request: CreatePostRequest, db: AsyncSession = Depends(get_db), _user=Depends(get_optional_user)):
     """Create a community post in the database."""
     post_id = str(uuid.uuid4())
+
+    # If the request carries a valid Firebase token, canonicalize the user_id
+    # from the token — prevents impersonation by clients sending an arbitrary user_id.
+    effective_user_id = request.user_id or "anonymous"
+    if _user:
+        effective_user_id = _user["uid"]
 
     location_meta = {
         "name": request.location or "",
@@ -246,10 +255,12 @@ async def create_post(request: CreatePostRequest, db: AsyncSession = Depends(get
         location_meta["lat"] = request.lat
     if request.lon is not None:
         location_meta["lon"] = request.lon
+    if request.pincode:
+        location_meta["pincode"] = request.pincode
 
     db_post = CommunityPost(
         id=post_id,
-        user_id=request.user_id or "anonymous",
+        user_id=effective_user_id,
         content=request.content,
         post_type=request.type,
         media=request.media or [],
@@ -346,11 +357,16 @@ async def save_post(post_id: str, unsave: bool = False, db: AsyncSession = Depen
 
 
 @community_router.delete("/posts/{post_id}")
-async def delete_post(post_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_post(post_id: str, db: AsyncSession = Depends(get_db), _user=Depends(verify_firebase_token)):
     """Delete a post and its comments from the database."""
     post = await db.get(CommunityPost, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
+
+    # Only the post author (or admin) may delete a post
+    if post.user_id and post.user_id not in ("anonymous", "You"):
+        if _user["uid"] != post.user_id:
+            raise HTTPException(status_code=403, detail="You can only delete your own posts")
 
     # Delete associated comments first
     comment_result = await db.execute(

@@ -52,6 +52,8 @@ class AlertCreateRequest(BaseModel):
     source: str = "admin"
     location: dict
     is_active: bool = True
+    pincode: Optional[str] = None        # target pincode area (e.g. "400001")
+    radius_km: Optional[float] = None   # WS radius override (default 100 km)
 
 
 class AlertUpdateRequest(BaseModel):
@@ -261,20 +263,66 @@ async def list_alerts(limit: int = 200, db=Depends(get_db)):
 
 @router.post("/alerts")
 async def create_alert(body: AlertCreateRequest, db=Depends(get_db), _admin=Depends(verify_firebase_token)):
-    """Create alert from admin dashboard."""
+    """Create alert from admin dashboard, then broadcast via WS + Telegram."""
+    loc = dict(body.location or {})
+    if body.pincode:
+        loc["pincode"] = body.pincode
+
     alert = Alert(
         id=str(uuid.uuid4()),
         alert_type=body.alert_type,
         severity=body.severity,
         title=body.title,
         description=body.description,
-        location=body.location or {},
+        location=loc,
         source=body.source or "admin",
         is_active=body.is_active,
         retracted=False,
     )
     db.add(alert)
     await db.commit()
+
+    alert_dict = {
+        "id": alert.id,
+        "type": "alert",
+        "alert_type": alert.alert_type,
+        "title": alert.title,
+        "description": alert.description,
+        "severity": alert.severity,
+        "location": loc,
+        "coordinates": {"lat": loc.get("lat"), "lon": loc.get("lon")},
+        "is_active": alert.is_active,
+        "source": alert.source,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # ── WebSocket broadcast ────────────────────────────────────────────────────
+    try:
+        radius = body.radius_km or 100.0
+        if loc.get("lat") and loc.get("lon"):
+            await ws_manager.broadcast_location_based(alert_dict, radius_km=radius)
+        else:
+            await ws_manager.broadcast(alert_dict, alert.id)
+    except Exception as _e:
+        logger.warning("WS broadcast failed: %s", _e)
+
+    # ── Telegram: GPS proximity ────────────────────────────────────────────────
+    try:
+        import asyncio as _aio
+        from telegram_service import telegram_service
+        _aio.ensure_future(telegram_service.notify_nearby_users(alert_dict, db))
+    except Exception as _e:
+        logger.warning("Telegram GPS notify failed: %s", _e)
+
+    # ── Telegram: pincode targeting ────────────────────────────────────────────
+    if body.pincode:
+        try:
+            import asyncio as _aio
+            from telegram_service import telegram_service
+            _aio.ensure_future(telegram_service.notify_pincode_users(alert_dict, body.pincode, db))
+        except Exception as _e:
+            logger.warning("Telegram pincode notify failed: %s", _e)
+
     return {"success": True, "alert_id": alert.id}
 
 

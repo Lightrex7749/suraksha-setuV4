@@ -50,6 +50,29 @@ class PushNotificationManager:
         # TODO: In production, load from DB
         self.subscriptions = []
     
+    async def load_from_db(self, db_session) -> int:
+        """On startup: restore all active push subscriptions from DB into memory."""
+        try:
+            from database import PushSubscription
+            from sqlalchemy import select
+            result = await db_session.execute(
+                select(PushSubscription).where(PushSubscription.is_active == True)  # noqa: E712
+            )
+            subs = result.scalars().all()
+            loaded = 0
+            existing_endpoints = {s.get("endpoint") for s in self.subscriptions}
+            for sub in subs:
+                sub_info = sub.subscription_json
+                if sub_info and sub_info.get("endpoint") not in existing_endpoints:
+                    self.subscriptions.append(sub_info)
+                    existing_endpoints.add(sub_info.get("endpoint"))
+                    loaded += 1
+            logger.info("Restored %d push subscription(s) from DB", loaded)
+            return loaded
+        except Exception as e:
+            logger.error("Failed to load push subscriptions from DB: %s", e)
+            return 0
+
     def add_subscription(self, subscription_info: Dict[str, Any]) -> bool:
         """Add a new push subscription"""
         try:

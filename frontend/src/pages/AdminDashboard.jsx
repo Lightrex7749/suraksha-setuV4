@@ -62,6 +62,7 @@ const AdminDashboard = () => {
     lat: '',
     lon: '',
     description: '',
+    pincode: '',
   });
 
   // Telegram state
@@ -191,6 +192,7 @@ const AdminDashboard = () => {
           lat: alertForm.lat ? Number(alertForm.lat) : null,
           lon: alertForm.lon ? Number(alertForm.lon) : null,
         },
+        pincode: alertForm.pincode || undefined,
       };
       const res = await fetch(`${API_URL}/admin/alerts`, {
         method: 'POST',
@@ -200,7 +202,7 @@ const AdminDashboard = () => {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.detail || data.error || 'Failed to create alert');
       setActionFeedback('Alert created successfully');
-      setAlertForm({ title: '', alert_type: 'weather', severity: 'warning', city: '', lat: '', lon: '', description: '' });
+      setAlertForm({ title: '', alert_type: 'weather', severity: 'warning', city: '', lat: '', lon: '', description: '', pincode: '' });
       fetchData();
     } catch (err) {
       setActionFeedback(`Error: ${err.message}`);
@@ -913,6 +915,7 @@ const AdminDashboard = () => {
                 <Input placeholder="Longitude" value={alertForm.lon} onChange={(e) => setAlertForm((p) => ({ ...p, lon: e.target.value }))} />
               </div>
               <Input placeholder="Description" value={alertForm.description} onChange={(e) => setAlertForm((p) => ({ ...p, description: e.target.value }))} />
+              <Input placeholder="Target Pincode (optional — e.g. 400001)" value={alertForm.pincode} onChange={(e) => setAlertForm((p) => ({ ...p, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))} maxLength={6} />
               <Button onClick={handleCreateAlert} disabled={!alertForm.title || !alertForm.description}>Create Alert</Button>
 
               <div className="rounded-md border">
